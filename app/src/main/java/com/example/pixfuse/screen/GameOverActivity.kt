@@ -11,6 +11,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
@@ -18,43 +19,35 @@ import androidx.appcompat.app.AppCompatActivity
 class GameOverActivity : AppCompatActivity() {
 
     companion object {
-        const val EXTRA_SCORE = "extra_score"
-        const val EXTRA_HIGH_SCORE = "extra_high_score"
         const val EXTRA_IS_WIN = "extra_is_win"
     }
 
-    private lateinit var backgroundView: View
+    private lateinit var backgroundView: FrameLayout
     private lateinit var titleText: TextView
-    private lateinit var scoreText: TextView
-    private lateinit var highScoreText: TextView
     private lateinit var tryAgainButton: Button
     private lateinit var menuButton: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val score = intent.getIntExtra(EXTRA_SCORE, 0)
-        val highScore = intent.getIntExtra(EXTRA_HIGH_SCORE, 0)
+        supportActionBar?.hide()
         val isWin = intent.getBooleanExtra(EXTRA_IS_WIN, false)
 
-        setupViews(score, highScore, isWin)
+        setupViews(isWin)
         setupAnimations()
         setupClickListeners()
 
-        // Thiết lập OnBackPressedDispatcher
+        // Thiết lập OnBackPressedCallback để chỉ xử lý khi nhấn back
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                // Logic khi nhấn back: Quay lại MenuActivity
-                val intent = Intent(this@GameOverActivity, MenuActivity::class.java)
-                intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
-                startActivity(intent)
-                finish()
+                // Không tự động quay về menu, để người dùng quyết định
+                // Hoặc bạn có thể thêm logic quay về menu nếu muốn
             }
         })
     }
 
-    private fun setupViews(score: Int, highScore: Int, isWin: Boolean) {
-        backgroundView = View(this).apply {
+    private fun setupViews(isWin: Boolean) {
+        backgroundView = FrameLayout(this).apply {
             setBackgroundColor(Color.parseColor("#80000000")) // Semi-transparent overlay
         }
         setContentView(backgroundView)
@@ -68,32 +61,13 @@ class GameOverActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
         }
 
-        // Score display
-        scoreText = TextView(this).apply {
-            text = "Score: $score"
-            textSize = 28f
-            setTextColor(Color.WHITE)
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-        }
-
-        highScoreText = TextView(this).apply {
-            text = "Best: $highScore"
-            textSize = 24f
-            setTextColor(Color.parseColor("#FFD700"))
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-        }
-
         // Buttons
         tryAgainButton = createStyledButton("TRY AGAIN", Color.parseColor("#4CAF50"))
         menuButton = createStyledButton("MAIN MENU", Color.parseColor("#FF9800"))
 
         // Add views
-        (backgroundView as ViewGroup).apply {
+        backgroundView.apply {
             addView(titleText)
-            addView(scoreText)
-            addView(highScoreText)
             addView(tryAgainButton)
             addView(menuButton)
         }
@@ -130,34 +104,26 @@ class GameOverActivity : AppCompatActivity() {
 
             // Title
             titleText.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
-            titleText.layout(
-                (width - titleText.measuredWidth) / 2,
-                centerY - 200,
-                (width + titleText.measuredWidth) / 2,
-                centerY - 200 + titleText.measuredHeight
-            )
-
-            // Score texts
-            scoreText.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
-            scoreText.layout(
-                (width - scoreText.measuredWidth) / 2,
-                centerY - 100,
-                (width + scoreText.measuredWidth) / 2,
-                centerY - 100 + scoreText.measuredHeight
-            )
-
-            highScoreText.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
-            highScoreText.layout(
-                (width - highScoreText.measuredWidth) / 2,
-                centerY - 40,
-                (width + highScoreText.measuredWidth) / 2,
-                centerY - 40 + highScoreText.measuredHeight
-            )
+            val titleParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                topMargin = centerY - 100
+            }
+            titleText.layoutParams = titleParams
 
             // Buttons
             val buttonWidth = width * 2 / 3
             val buttonHeight = 70
+            val buttonParams = FrameLayout.LayoutParams(
+                buttonWidth,
+                buttonHeight
+            ).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+            }
 
+            tryAgainButton.layoutParams = buttonParams
             tryAgainButton.layout(
                 (width - buttonWidth) / 2,
                 centerY + 50,
@@ -165,6 +131,7 @@ class GameOverActivity : AppCompatActivity() {
                 centerY + 50 + buttonHeight
             )
 
+            menuButton.layoutParams = buttonParams
             menuButton.layout(
                 (width - buttonWidth) / 2,
                 centerY + 140,
@@ -176,7 +143,7 @@ class GameOverActivity : AppCompatActivity() {
 
     private fun setupAnimations() {
         // Scale in animation for all views
-        val views = listOf(titleText, scoreText, highScoreText, tryAgainButton, menuButton)
+        val views = listOf(titleText, tryAgainButton, menuButton)
         views.forEachIndexed { index, view ->
             view.scaleX = 0f
             view.scaleY = 0f

@@ -1,9 +1,8 @@
-package com.example.pixfuse.screen
+package com.example.pixfuse
 
 import android.content.Context
 import android.graphics.*
 import android.view.animation.AccelerateDecelerateInterpolator
-import kotlin.collections.get
 import kotlin.math.*
 import kotlin.random.Random
 

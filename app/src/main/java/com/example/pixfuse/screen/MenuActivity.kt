@@ -67,7 +67,7 @@ class MenuActivity : AppCompatActivity() {
             adjustViewBounds = true
         }
 
-        // Buttons
+        // Buttons với style cải thiện
         playButton = createStyledButton("PLAY GAME", Color.parseColor("#EDC22E"))
         highScoresButton = createStyledButton("HIGH SCORES", Color.parseColor("#EE4C2C"))
         settingsButton = createStyledButton("SETTINGS", Color.parseColor("#A6C5FF"))
@@ -87,21 +87,23 @@ class MenuActivity : AppCompatActivity() {
     private fun createStyledButton(text: String, color: Int): Button {
         return Button(this).apply {
             this.text = text
-            textSize = 20f
+            textSize = 24f // Tăng kích thước chữ để dễ nhìn hơn
             setTextColor(Color.WHITE)
+            setShadowLayer(4f, 2f, 2f, Color.BLACK) // Thêm shadow để chữ nổi bật hơn
             typeface = Typeface.DEFAULT_BOLD
             background = createButtonDrawable(color)
-            elevation = 8f
-            isAllCaps = true
+            elevation = 12f // Tăng elevation để nổi bật
+            isAllCaps = false // Không all caps để chữ tự nhiên hơn
+            setPadding(32, 16, 32, 16) // Thêm padding để button rộng hơn
         }
     }
 
     private fun createButtonDrawable(color: Int): Drawable {
         val drawable = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
-            cornerRadius = 16f
+            cornerRadius = 20f // Tăng corner radius cho bo tròn hơn
             setColor(color)
-            setStroke(4, Color.parseColor("#FFFFFF"))
+            setStroke(4, Color.parseColor("#FFFFFF")) // Giữ viền trắng
         }
         return drawable
     }
@@ -113,40 +115,69 @@ class MenuActivity : AppCompatActivity() {
             val height = containerLayout.height
 
             // Logo
-            val logoWidth = (width * 0.6f).toInt() // Adjust width as needed, e.g., 60% of screen width
-            val logoHeight = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-            logoImage.measure(
-                View.MeasureSpec.makeMeasureSpec(logoWidth, View.MeasureSpec.EXACTLY),
-                logoHeight
-            )
-            logoImage.layout(
-                (width - logoImage.measuredWidth) / 2,
-                height / 6,
-                (width + logoImage.measuredWidth) / 2,
-                height / 6 + logoImage.measuredHeight
-            )
-
-            // Buttons
-            val buttonWidth = width * 3 / 4
-            val buttonHeight = 80
-            val buttonSpacing = 24
-            val startY = height / 3
-
-            val buttons = listOf(playButton, highScoresButton, settingsButton, aboutButton)
-            buttons.forEachIndexed { index, button ->
-                val y = startY + index * (buttonHeight + buttonSpacing)
-                button.layout(
-                    (width - buttonWidth) / 2,
-                    y,
-                    (width + buttonWidth) / 2,
-                    y + buttonHeight
-                )
+            val logoWidth = (width * 0.6f).toInt() // 60% of screen width
+            val logoHeight = (logoWidth * 0.4f).toInt() // Aspect ratio for logo
+            val logoParams = ConstraintLayout.LayoutParams(logoWidth, logoHeight).apply {
+                topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                bottomToTop = playButton.id // Dưới logo là play button
+                startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                topMargin = (height * 0.1f).toInt() // Margin top 10%
+                verticalChainStyle = ConstraintLayout.LayoutParams.CHAIN_PACKED
             }
+            logoImage.id = View.generateViewId()
+            logoImage.layoutParams = logoParams
+
+            // Buttons layout
+            val buttonWidth = (width * 0.7f).toInt()
+            val buttonHeight = (height * 0.08f).toInt()
+            val buttonMargin = (height * 0.03f).toInt()
+
+            // Play button
+            playButton.id = View.generateViewId()
+            val playParams = ConstraintLayout.LayoutParams(buttonWidth, buttonHeight).apply {
+                topToBottom = logoImage.id
+                startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                topMargin = buttonMargin
+            }
+            playButton.layoutParams = playParams
+
+            // High Scores button
+            highScoresButton.id = View.generateViewId()
+            val highParams = ConstraintLayout.LayoutParams(buttonWidth, buttonHeight).apply {
+                topToBottom = playButton.id
+                startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                topMargin = buttonMargin
+            }
+            highScoresButton.layoutParams = highParams
+
+            // Settings button
+            settingsButton.id = View.generateViewId()
+            val settingsParams = ConstraintLayout.LayoutParams(buttonWidth, buttonHeight).apply {
+                topToBottom = highScoresButton.id
+                startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                topMargin = buttonMargin
+            }
+            settingsButton.layoutParams = settingsParams
+
+            // About button
+            aboutButton.id = View.generateViewId()
+            val aboutParams = ConstraintLayout.LayoutParams(buttonWidth, buttonHeight).apply {
+                topToBottom = settingsButton.id
+                startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                topMargin = buttonMargin
+                bottomMargin = (height * 0.1f).toInt() // Margin bottom 10%
+            }
+            aboutButton.layoutParams = aboutParams
         }
     }
 
     private fun setupAnimations() {
-        // Fade in animations
+        // Fade in animation cho logo
         logoImage.alpha = 0f
         logoImage.animate()
             .alpha(1f)
@@ -154,15 +185,18 @@ class MenuActivity : AppCompatActivity() {
             .setInterpolator(AccelerateDecelerateInterpolator())
             .start()
 
+        // Scale in animation cho buttons
         val buttons = listOf(playButton, highScoresButton, settingsButton, aboutButton)
         buttons.forEachIndexed { index, button ->
+            button.scaleX = 0.8f
+            button.scaleY = 0.8f
             button.alpha = 0f
-            button.translationY = 100f
             button.animate()
+                .scaleX(1f)
+                .scaleY(1f)
                 .alpha(1f)
-                .translationY(0f)
-                .setDuration(800)
-                .setStartDelay((index * 150).toLong())
+                .setDuration(600)
+                .setStartDelay((index * 200L) + 500L)
                 .setInterpolator(AccelerateDecelerateInterpolator())
                 .start()
         }
@@ -171,26 +205,27 @@ class MenuActivity : AppCompatActivity() {
     private fun setupClickListeners() {
         playButton.setOnClickListener {
             animateButtonClick(it) {
-                startActivity(Intent(this, MainActivity::class.java))
-                overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+                val intent = Intent(this, MainActivity::class.java)
+                startActivity(intent)
+                finish()
             }
         }
 
         highScoresButton.setOnClickListener {
             animateButtonClick(it) {
-                // TODO: Implement high scores screen
+                // TODO: Implement High Scores Activity
             }
         }
 
         settingsButton.setOnClickListener {
             animateButtonClick(it) {
-                // TODO: Implement settings screen
+                // TODO: Implement Settings Activity
             }
         }
 
         aboutButton.setOnClickListener {
             animateButtonClick(it) {
-                // TODO: Implement about dialog
+                // TODO: Implement About Activity
             }
         }
     }
@@ -215,27 +250,36 @@ class MenuActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         // Kích hoạt animation background nếu cần
-        findViewById<AnimatedBackgroundView>(containerLayout.id)?.resume()
+        containerLayout.findViewById<AnimatedBackgroundView>(0)?.resume() // ID 0 cho background
     }
 
     override fun onPause() {
         super.onPause()
         // Tạm dừng animation background nếu cần
-        findViewById<AnimatedBackgroundView>(containerLayout.id)?.pause()
+        containerLayout.findViewById<AnimatedBackgroundView>(0)?.pause()
     }
 }
 
-// Animated background view with floating Pokemon-themed particles
+// Animated background view with PNG background and floating particles
 class AnimatedBackgroundView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val particles = mutableListOf<Particle>()
     private var animationRunning = false
+    private var backgroundBitmap: Bitmap? = null
 
     init {
+        // Load PNG background
+        loadBackground()
+
         // Initialize particles
         repeat(20) {
             particles.add(createRandomParticle())
         }
+    }
+
+    private fun loadBackground() {
+        // Giả sử PNG background là R.drawable.menu_background - thay bằng tên thực tế của bạn
+        backgroundBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.background1)
     }
 
     private fun createRandomParticle(): Particle {
@@ -297,15 +341,36 @@ class AnimatedBackgroundView(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        // Draw gradient background
-        val gradient = LinearGradient(
-            0f, 0f, 0f, height.toFloat(),
-            Color.parseColor("#FAF8EF"), Color.parseColor("#E8E4D3"),
-            Shader.TileMode.CLAMP
-        )
-        paint.shader = gradient
-        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
-        paint.shader = null
+        // Draw PNG background (tile nếu cần)
+        val bg = backgroundBitmap
+        if (bg != null) {
+            val bgWidth = bg.width.toFloat()
+            val bgHeight = bg.height.toFloat()
+            val viewWidth = width.toFloat()
+            val viewHeight = height.toFloat()
+
+            // Tile horizontally and vertically if background smaller than screen
+            val horizontalTiles = (viewWidth / bgWidth).toInt() + 1
+            val verticalTiles = (viewHeight / bgHeight).toInt() + 1
+
+            for (i in 0 until horizontalTiles) {
+                for (j in 0 until verticalTiles) {
+                    val x = i * bgWidth
+                    val y = j * bgHeight
+                    canvas.drawBitmap(bg, x, y, paint)
+                }
+            }
+        } else {
+            // Fallback gradient nếu không load được PNG
+            val gradient = LinearGradient(
+                0f, 0f, 0f, height.toFloat(),
+                Color.parseColor("#FAF8EF"), Color.parseColor("#E8E4D3"),
+                Shader.TileMode.CLAMP
+            )
+            paint.shader = gradient
+            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+            paint.shader = null
+        }
 
         // Draw particles
         particles.forEach { particle ->

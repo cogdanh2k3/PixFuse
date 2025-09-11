@@ -6,22 +6,24 @@ import android.content.Intent
 import android.graphics.*
 import android.os.Bundle
 import android.util.AttributeSet
-import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.widget.FrameLayout
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.GestureDetectorCompat
 import com.example.pixfuse.R
 import kotlinx.coroutines.*
-import kotlin.math.*
+import kotlin.math.min
+import kotlin.random.Random
 
 class MainActivity : AppCompatActivity() {
     private lateinit var gameView: GameView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        supportActionBar?.hide()
 
         // Set fullscreen
         window.setFlags(
@@ -32,7 +34,7 @@ class MainActivity : AppCompatActivity() {
         gameView = GameView(this)
         setContentView(gameView)
 
-        // Thiết lập OnBackPressedDispatcher
+        // Thiết lập OnBackPressedCallback
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 // Logic khi nhấn back: Quay lại MenuActivity
@@ -53,105 +55,86 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
+// Data class for asteroid
+data class Asteroid(
+    var x: Float,
+    var y: Float,
+    val size: Float,
+    val speed: Float
+)
+
 class GameView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
     defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr) {
 
-    // Game logic components
-    private val board = Board(4)
-    private val gameManager = GameManager(board, context)
-
     // Drawing components
     private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val tilePaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val scorePaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private var logoBitmap: Bitmap? = null
+    private var characterBitmap: Bitmap? = null
+    private var spaceBackgroundBitmap: Bitmap? = null
+    private var asteroidBitmap: Bitmap? = null
 
-    // Dynamic background
-    private val backgroundColors = listOf(
-        Color.parseColor("#FAF8EF"), // Original background
-        Color.parseColor("#E8F0FE"), // Light blue
-        Color.parseColor("#FFF0F5"), // Light pink
-        Color.parseColor("#E6FFE6")  // Light green
-    )
-    private var colorTransitionTime = 0f
-    private val colorTransitionDuration = 5f // Seconds for one full color transition cycle
-    private var currentColorIndex = 0
+    // Character position (follows touch)
+    private var characterX = 0f
+    private var characterY = 0f
+    private var characterSize = 0f
 
-    // Touch handling
-    private val gestureDetector: GestureDetectorCompat
+    // Asteroids
+    private val asteroids = mutableListOf<Asteroid>()
+    private var lastSpawnTime = 0L
+    private var spawnInterval = 1500L // Initial interval in ms (1.5 seconds)
+    private var gameStartTime = 0L
+
+    // Background scrolling
+    private var backgroundOffsetY = 0f
+    private val scrollSpeed = 200f // Pixels per second
 
     // Animation and timing
     private val gameLoop = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var isRunning = false
     private var lastTime = System.currentTimeMillis()
 
-    // Layout properties
-    private var tileSize = 0f
-    private var boardStartX = 0f
-    private var boardStartY = 0f
-    private var padding = 8f
-
-    // Pokemon tile bitmaps cache
-    private val tileBitmaps = mutableMapOf<Int, Bitmap>()
-
     init {
         // Initialize paints
-        backgroundPaint.color = backgroundColors[0]
+        backgroundPaint.isFilterBitmap = true
 
-        tilePaint.style = Paint.Style.FILL
+        // Load bitmaps
+        loadCharacter()
+        loadSpaceBackground()
+        loadAsteroid()
 
-        textPaint.apply {
-            color = Color.parseColor("#776E65")
-            textAlign = Paint.Align.CENTER
-            typeface = Typeface.DEFAULT_BOLD
-        }
+        // Initial character position (bottom center, but will be set in onSizeChanged)
+        characterX = 0f
+        characterY = 0f
 
-        scorePaint.apply {
-            color = Color.WHITE
-            textAlign = Paint.Align.CENTER
-            typeface = Typeface.DEFAULT_BOLD
-        }
-
-        // Initialize gesture detector
-        gestureDetector = GestureDetectorCompat(context, GestureListener())
-
-        // Load tile PNGs and logo
-        loadTilePNGs()
-        loadLogo()
-
-        // Start game
-        gameManager.spawnTile()
-        gameManager.spawnTile()
+        gameStartTime = System.currentTimeMillis()
+        lastSpawnTime = gameStartTime
 
         startGameLoop()
     }
 
-    private fun loadTilePNGs() {
-        val tileImages = mapOf(
-            2 to R.drawable.pikachu_2,       // Pikachu
-            4 to R.drawable.charmander_4,    // Charmander
-            8 to R.drawable.bullbasaur_8,    // Bulbasaur
-            16 to R.drawable.squirtle_16,    // Squirtle
-            32 to R.drawable.eevee_32,       // Eevee
-            64 to R.drawable.jigglypuff_64,  // Jigglypuff
-            128 to R.drawable.snorlax_128,   // Snorlax
-            256 to R.drawable.dratini_256,   // Dratini
-            512 to R.drawable.pidgey_512,    // Pidgey
-            1024 to R.drawable.abra_1024,    // Abra
-            2048 to R.drawable.venonat_2048  // Venonat
-        )
-
-        for ((value, resId) in tileImages) {
-            tileBitmaps[value] = BitmapFactory.decodeResource(context.resources, resId)
-        }
+    private fun loadCharacter() {
+        characterBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.character)
     }
 
-    private fun loadLogo() {
-        logoBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.logo)
+    private fun loadSpaceBackground() {
+        spaceBackgroundBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.bg_space_seamless)
+    }
+
+    private fun loadAsteroid() {
+        asteroidBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.asteroid_2)
+    }
+
+    private fun spawnAsteroid() {
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val asteroidSize = min(w, h) * Random.nextFloat() * 0.1f + min(w, h) * 0.05f // Random size between 5% and 15% of screen min dimension
+        val x = Random.nextFloat() * (w - asteroidSize) // Random x from 0 to width - size
+        val y = -asteroidSize // Start from top (negative to ensure fully off-screen initially)
+        val speed = 100f + Random.nextFloat() * 200f // Random speed 100-300 px/s
+
+        asteroids.add(Asteroid(x, y, asteroidSize, speed))
     }
 
     private fun startGameLoop() {
@@ -163,20 +146,25 @@ class GameView @JvmOverloads constructor(
                     val deltaTime = (currentTime - lastTime) / 1000f
                     lastTime = currentTime
 
-                    // Update background color transition
-                    colorTransitionTime += deltaTime
-                    if (colorTransitionTime >= colorTransitionDuration) {
-                        colorTransitionTime = 0f
-                        currentColorIndex = (currentColorIndex + 1) % backgroundColors.size
+                    // Spawn asteroids periodically
+                    if (currentTime - lastSpawnTime > spawnInterval) {
+                        spawnAsteroid()
+                        lastSpawnTime = currentTime
+                        // Gradually decrease interval to increase difficulty
+                        spawnInterval = maxOf(500L, spawnInterval - 100L) // Min 0.5s
                     }
 
-                    board.update(deltaTime)
-                    if (gameManager.isMoved) {
-                        gameManager.update() // Calls spawnTile, checkWin, checkLose
-                        if (gameManager.hasWon || gameManager.hasLost) {
-                            endGame()
-                        }
+                    // Update background scroll
+                    backgroundOffsetY += scrollSpeed * deltaTime
+                    if (backgroundOffsetY >= spaceBackgroundBitmap?.height?.toFloat() ?: height.toFloat()) {
+                        backgroundOffsetY = 0f
                     }
+
+                    // Update asteroids
+                    updateAsteroids(deltaTime)
+
+                    // Check collisions
+                    checkCollisions()
 
                     invalidate()
                     delay(16) // ~60 FPS
@@ -185,209 +173,167 @@ class GameView @JvmOverloads constructor(
         }
     }
 
+    private fun updateAsteroids(deltaTime: Float) {
+        val iterator = asteroids.iterator()
+        while (iterator.hasNext()) {
+            val asteroid = iterator.next()
+            asteroid.y += asteroid.speed * deltaTime
+            // Remove if off-screen
+            if (asteroid.y > height.toFloat() + asteroid.size) {
+                iterator.remove()
+            }
+        }
+    }
+
+    private fun checkCollisions() {
+        val characterRect = RectF(
+            characterX - characterSize / 2f,
+            characterY - characterSize / 2f,
+            characterX + characterSize / 2f,
+            characterY + characterSize / 2f
+        )
+
+        for (asteroid in asteroids) {
+            val asteroidRect = RectF(
+                asteroid.x - asteroid.size / 2f,
+                asteroid.y - asteroid.size / 2f,
+                asteroid.x + asteroid.size / 2f,
+                asteroid.y + asteroid.size / 2f
+            )
+
+            if (RectF.intersects(characterRect, asteroidRect)) {
+                endGame()
+                return
+            }
+        }
+    }
+
+    private fun endGame() {
+        isRunning = false
+        val intent = Intent(context, GameOverActivity::class.java).apply {
+            putExtra(GameOverActivity.EXTRA_IS_WIN, false)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        context.startActivity(intent)
+        // Không gọi finish() để tránh đóng MainActivity ngay lập tức
+    }
+
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        // Calculate tile size and board position
-        tileSize = (min(w, h) * 0.75f) / 4f
-        boardStartX = (w - (tileSize * 4 + padding * 3)) / 2
-        boardStartY = h * 0.35f
-        board.updateLayout(boardStartX, boardStartY, tileSize, padding)
+        // Calculate character size based on screen
+        characterSize = min(w, h) * 0.15f // 15% of smaller dimension
+
+        // Set initial position to bottom center
+        characterX = w / 2f
+        characterY = h - characterSize / 2f
+
+        // Clamp initial position to screen bounds
+        characterX = characterX.coerceIn(characterSize / 2f, (w - characterSize / 2f).toFloat())
+        characterY = characterY.coerceIn(characterSize / 2f, (h - characterSize / 2f).toFloat())
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        // Calculate interpolated background color
-        val nextColorIndex = (currentColorIndex + 1) % backgroundColors.size
-        val fraction = colorTransitionTime / colorTransitionDuration
-        val currentColor = backgroundColors[currentColorIndex]
-        val nextColor = backgroundColors[nextColorIndex]
-        val interpolatedColor = interpolateColor(currentColor, nextColor, fraction)
-        canvas.drawColor(interpolatedColor)
+        // Draw scrolling background
+        drawScrollingBackground(canvas)
 
-        drawHeader(canvas)
-        drawBoard(canvas)
-        drawGameState(canvas)
+        // Draw asteroids
+        drawAsteroids(canvas)
+
+        // Draw character
+        drawCharacter(canvas)
     }
 
-    private fun interpolateColor(startColor: Int, endColor: Int, fraction: Float): Int {
-        val startA = (startColor shr 24) and 0xff
-        val startR = (startColor shr 16) and 0xff
-        val startG = (startColor shr 8) and 0xff
-        val startB = startColor and 0xff
+    private fun drawScrollingBackground(canvas: Canvas) {
+        val bg = spaceBackgroundBitmap ?: return
+        val bgWidth = bg.width.toFloat()
+        val bgHeight = bg.height.toFloat()
+        val viewWidth = width.toFloat()
+        val viewHeight = height.toFloat()
 
-        val endA = (endColor shr 24) and 0xff
-        val endR = (endColor shr 16) and 0xff
-        val endG = (endColor shr 8) and 0xff
-        val endB = endColor and 0xff
+        // Normalize offset to be within 0 to height
+        val normalizedOffset = backgroundOffsetY % bgHeight
+        val topOffset = if (normalizedOffset > 0) normalizedOffset - bgHeight else normalizedOffset
 
-        val resultA = (startA + fraction * (endA - startA)).toInt()
-        val resultR = (startR + fraction * (endR - startR)).toInt()
-        val resultG = (startG + fraction * (endG - startG)).toInt()
-        val resultB = (startB + fraction * (endB - startB)).toInt()
+        // Draw top part
+        val topSrcRect = Rect(0, 0, bg.width, bg.height)
+        val topDestRect = RectF(0f, topOffset, viewWidth, topOffset + viewHeight)
+        canvas.drawBitmap(bg, topSrcRect, topDestRect, backgroundPaint)
 
-        return (resultA shl 24) or (resultR shl 16) or (resultG shl 8) or resultB
-    }
-
-    private fun drawHeader(canvas: Canvas) {
-        // Draw logo instead of text
-        logoBitmap?.let { bitmap ->
-            val logoWidth = width * 0.4f // Kích thước logo bằng 40% chiều rộng màn hình
-            val logoHeight = logoWidth * (bitmap.height.toFloat() / bitmap.width.toFloat()) // Giữ tỷ lệ
-            val logoRect = RectF(
-                (width - logoWidth) / 2,
-                height * 0.08f,
-                (width + logoWidth) / 2,
-                height * 0.08f + logoHeight
-            )
-            canvas.drawBitmap(bitmap, null, logoRect, null)
+        // Draw bottom part
+        val bottomOffset = topOffset + bgHeight
+        val bottomDestRect = RectF(0f, bottomOffset, viewWidth, bottomOffset + viewHeight)
+        if (bottomOffset < viewHeight) {
+            canvas.drawBitmap(bg, topSrcRect, bottomDestRect, backgroundPaint)
         }
 
-        // Score boxes
-        val scoreBoxWidth = width * 0.2f
-        val scoreBoxHeight = height * 0.08f
-        val scoreY = height * 0.25f
-
-        // Score box background
-        tilePaint.color = Color.parseColor("#BBADA0")
-        val scoreRect = RectF(width * 0.25f, scoreY - scoreBoxHeight/2, width * 0.45f, scoreY + scoreBoxHeight/2)
-        canvas.drawRoundRect(scoreRect, 8f, 8f, tilePaint)
-
-        // Best score box background
-        val bestRect = RectF(width * 0.55f, scoreY - scoreBoxHeight/2, width * 0.75f, scoreY + scoreBoxHeight/2)
-        canvas.drawRoundRect(bestRect, 8f, 8f, tilePaint)
-
-        // Score text
-        scorePaint.textSize = height * 0.025f
-        scorePaint.color = Color.parseColor("#EEE4DA")
-        canvas.drawText("SCORE", width * 0.35f, scoreY - height * 0.02f, scorePaint)
-        canvas.drawText("BEST", width * 0.65f, scoreY - height * 0.02f, scorePaint)
-
-        scorePaint.textSize = height * 0.035f
-        scorePaint.color = Color.WHITE
-        canvas.drawText(gameManager.score.toString(), width * 0.35f, scoreY + height * 0.02f, scorePaint)
-        canvas.drawText(gameManager.highScore.toString(), width * 0.65f, scoreY + height * 0.02f, scorePaint)
-    }
-
-    private fun drawBoard(canvas: Canvas) {
-        // Draw board background
-        tilePaint.color = Color.parseColor("#BBADA0")
-        val boardRect = RectF(
-            boardStartX - padding,
-            boardStartY - padding,
-            boardStartX + 4 * tileSize + 3 * padding + padding,
-            boardStartY + 4 * tileSize + 3 * padding + padding
-        )
-        canvas.drawRoundRect(boardRect, 12f, 12f, tilePaint)
-
-        // Draw empty tile backgrounds
-        tilePaint.color = Color.parseColor("#CDC1B4")
-        for (row in 0 until 4) {
-            for (col in 0 until 4) {
-                val x = boardStartX + col * (tileSize + padding)
-                val y = boardStartY + row * (tileSize + padding)
-                val tileRect = RectF(x, y, x + tileSize, y + tileSize)
-                canvas.drawRoundRect(tileRect, 8f, 8f, tilePaint)
+        // Tile horizontally if background is narrower than screen
+        if (bgWidth < viewWidth) {
+            val horizontalTiles = (viewWidth / bgWidth).toInt() + 1
+            for (i in 1 until horizontalTiles) {
+                val horizDestTop = RectF(i * bgWidth + topOffset, topOffset, (i + 1) * bgWidth, topOffset + viewHeight)
+                canvas.drawBitmap(bg, topSrcRect, horizDestTop, backgroundPaint)
+                if (bottomOffset < viewHeight) {
+                    val horizDestBottom = RectF(i * bgWidth + bottomOffset, bottomOffset, (i + 1) * bgWidth, bottomOffset + viewHeight)
+                    canvas.drawBitmap(bg, topSrcRect, horizDestBottom, backgroundPaint)
+                }
             }
         }
-
-        // Draw tiles
-        board.draw(canvas, tileBitmaps)
     }
 
-    private fun drawGameState(canvas: Canvas) {
-        // Only draw overlay for game over state
-        if (gameManager.hasLost) {
-            drawOverlay(canvas, "GAME OVER!", Color.parseColor("#EE4C2C"))
+    private fun drawAsteroids(canvas: Canvas) {
+        val asteroid = asteroidBitmap ?: return
+        asteroids.forEach { ast ->
+            val halfSize = ast.size / 2f
+            val srcRect = Rect(0, 0, asteroid.width, asteroid.height)
+            val destRect = RectF(
+                ast.x - halfSize,
+                ast.y - halfSize,
+                ast.x + halfSize,
+                ast.y + halfSize
+            )
+            canvas.drawBitmap(asteroid, srcRect, destRect, backgroundPaint)
         }
-        // Win state is handled by navigation to WinActivity
     }
 
-    private fun drawOverlay(canvas: Canvas, message: String, color: Int) {
-        // Semi-transparent overlay
-        canvas.drawColor(Color.parseColor("#80FFFFFF"))
+    private fun drawCharacter(canvas: Canvas) {
+        val character = characterBitmap ?: return
+        val halfSize = characterSize / 2f
 
-        // Message background
-        tilePaint.color = color
-        val messageRect = RectF(
-            width * 0.1f, height * 0.4f,
-            width * 0.9f, height * 0.6f
+        // Clamp position to screen bounds (with margin)
+        val clampedX = characterX.coerceIn(halfSize, (width - halfSize).toFloat())
+        val clampedY = characterY.coerceIn(halfSize, (height - halfSize).toFloat())
+
+        val srcRect = Rect(0, 0, character.width, character.height)
+        val destRect = RectF(
+            clampedX - halfSize,
+            clampedY - halfSize,
+            clampedX + halfSize,
+            clampedY + halfSize
         )
-        canvas.drawRoundRect(messageRect, 16f, 16f, tilePaint)
 
-        // Message text
-        textPaint.color = Color.WHITE
-        textPaint.textSize = height * 0.06f
-        canvas.drawText(message, width * 0.5f, height * 0.52f, textPaint)
+        canvas.drawBitmap(character, srcRect, destRect, backgroundPaint)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        gestureDetector.onTouchEvent(event)
+        // Follow touch position directly
+        characterX = event.x
+        characterY = event.y
+        invalidate() // Redraw immediately for smooth following
         return true
     }
 
-    inner class GestureListener : GestureDetector.SimpleOnGestureListener() {
-        private val swipeThreshold = 100f
-        private val swipeVelocityThreshold = 100f
-
-        override fun onFling(
-            e1: MotionEvent?,
-            e2: MotionEvent,
-            velocityX: Float,
-            velocityY: Float
-        ): Boolean {
-            val diffX = e2.x - (e1?.x ?: 0f)
-            val diffY = e2.y - (e1?.y ?: 0f)
-
-            if (abs(diffX) > abs(diffY)) {
-                if (abs(diffX) > swipeThreshold && abs(velocityX) > swipeVelocityThreshold) {
-                    if (diffX > 0) {
-                        gameManager.moveRight()
-                    } else {
-                        gameManager.moveLeft()
-                    }
-                    return true
-                }
-            } else {
-                if (abs(diffY) > swipeThreshold && abs(velocityY) > swipeVelocityThreshold) {
-                    if (diffY > 0) {
-                        gameManager.moveDown()
-                    } else {
-                        gameManager.moveUp()
-                    }
-                    return true
-                }
-            }
-            return false
-        }
-    }
-
     fun resume() {
+        isRunning = false // Stop current loop
+        gameStartTime = System.currentTimeMillis()
+        lastSpawnTime = gameStartTime
+        spawnInterval = 1500L
+        asteroids.clear()
         startGameLoop()
     }
 
     fun pause() {
         isRunning = false
-        gameManager.saveHighScore()
-    }
-
-    private fun endGame() {
-        isRunning = false // Stop the game loop
-        gameManager.saveHighScore()
-        val intent = if (gameManager.hasWon) {
-            Intent(context, WinActivity::class.java).apply {
-                putExtra(WinActivity.EXTRA_SCORE, gameManager.score)
-                putExtra(WinActivity.EXTRA_HIGH_SCORE, gameManager.highScore)
-                putExtra(WinActivity.EXTRA_LEVEL, 1) // Adjust level as needed
-            }
-        } else {
-            Intent(context, GameOverActivity::class.java).apply {
-                putExtra(GameOverActivity.EXTRA_SCORE, gameManager.score)
-                putExtra(GameOverActivity.EXTRA_HIGH_SCORE, gameManager.highScore)
-                putExtra(GameOverActivity.EXTRA_IS_WIN, false)
-            }
-        }
-        context.startActivity(intent)
-        (context as Activity).finish()
     }
 }
