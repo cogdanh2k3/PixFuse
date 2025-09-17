@@ -105,7 +105,7 @@ class GameView @JvmOverloads constructor(
     private val gameLoop = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var isRunning = false
     private var lastTime = System.currentTimeMillis()
-
+    private var check = false
     init {
         backgroundPaint.isFilterBitmap = true
         loadCharacter()
@@ -116,6 +116,12 @@ class GameView @JvmOverloads constructor(
         lastSpawnTime = gameStartTime
 
         startGameLoop()
+        //spawnAsteroids(5) // Ví dụ spawn 5 thiên thạch
+    }
+    private fun spawnAsteroids(count: Int) {
+        repeat(count){
+            spawnAsteroid()
+        }
     }
 
     private fun loadCharacter() {
@@ -133,7 +139,8 @@ class GameView @JvmOverloads constructor(
     private fun spawnAsteroid() {
         val w = width.toFloat()
         val h = height.toFloat()
-        val asteroidSize = min(w, h) * Random.nextFloat() * 0.1f + min(w, h) * 0.05f
+        //val asteroidSize = min(w, h)* Random.nextFloat() * 0.1f + min(w, h) * 0.05f
+        val asteroidSize = min(w, h) * 0.1f + min(w, h) * 0.05f
         val x = Random.nextFloat() * (w - asteroidSize)
         val y = -asteroidSize
         val speed = 100f + Random.nextFloat() * 200f
@@ -147,7 +154,6 @@ class GameView @JvmOverloads constructor(
         )
         bullets.add(bullet)
     }
-
     private fun startGameLoop() {
         if (!isRunning) {
             isRunning = true
@@ -156,13 +162,17 @@ class GameView @JvmOverloads constructor(
                     val currentTime = System.currentTimeMillis()
                     val deltaTime = (currentTime - lastTime) / 1000f
                     lastTime = currentTime
+                    if(check==false){
+                        spawnAsteroids(5)
+                        check=true
+                    }
 
                     // Spawn asteroid
-                    if (currentTime - lastSpawnTime > spawnInterval) {
-                        spawnAsteroid()
-                        lastSpawnTime = currentTime
-                        spawnInterval = maxOf(500L, spawnInterval - 100L)
-                    }
+                   // if (currentTime - lastSpawnTime > spawnInterval) {
+                     //   spawnAsteroid()
+                       // lastSpawnTime = currentTime
+                        //spawnInterval = maxOf(500L, spawnInterval - 100L)
+                    //}
 
                     // Spawn bullet
                     if (currentTime - lastBulletTime > bulletInterval) {
@@ -188,13 +198,24 @@ class GameView @JvmOverloads constructor(
         }
     }
 
+//    private fun updateAsteroids(deltaTime: Float) {
+//        val iterator = asteroids.iterator()
+//        while (iterator.hasNext()) {
+//            val asteroid = iterator.next()
+//            asteroid.y += asteroid.speed * deltaTime
+//            if (asteroid.y > height.toFloat() + asteroid.size) {
+//                iterator.remove()
+//}
+//        }
+//    }
     private fun updateAsteroids(deltaTime: Float) {
-        val iterator = asteroids.iterator()
-        while (iterator.hasNext()) {
-            val asteroid = iterator.next()
+        asteroids.forEach { asteroid ->
             asteroid.y += asteroid.speed * deltaTime
-            if (asteroid.y > height.toFloat() + asteroid.size) {
-                iterator.remove()
+
+            // Nếu thiên thạch chạm đáy màn hình → spawn lại từ trên
+            if (asteroid.y - asteroid.size / 2f > height) {
+                asteroid.y = -asteroid.size / 2f   // quay lại bên trên
+                asteroid.hitCount = 0              // reset số lần trúng đạn
             }
         }
     }
