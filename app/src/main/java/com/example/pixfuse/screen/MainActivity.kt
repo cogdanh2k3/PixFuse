@@ -1,6 +1,5 @@
 package com.example.pixfuse.screen
 
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.graphics.*
@@ -9,7 +8,6 @@ import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.FrameLayout
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import com.example.pixfuse.R
@@ -25,7 +23,7 @@ class MainActivity : AppCompatActivity() {
 
         supportActionBar?.hide()
 
-        // Set fullscreen
+        // Fullscreen
         window.setFlags(
             WindowManager.LayoutParams.FLAG_FULLSCREEN,
             WindowManager.LayoutParams.FLAG_FULLSCREEN
@@ -34,10 +32,9 @@ class MainActivity : AppCompatActivity() {
         gameView = GameView(this)
         setContentView(gameView)
 
-        // Thiết lập OnBackPressedCallback
+        // Back về Menu
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                // Logic khi nhấn back: Quay lại MenuActivity
                 startActivity(Intent(this@MainActivity, MenuActivity::class.java))
                 finish()
             }
@@ -55,27 +52,36 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
-// Data class for asteroid
+// --- DATA CLASS ---
 data class Asteroid(
     var x: Float,
     var y: Float,
     val size: Float,
-    val speed: Float
+    val speed: Float,
+    var hitCount: Int = 0 // số lần trúng đạn
 )
 
+data class Bullet(
+    var x: Float,
+    var y: Float,
+    val speed: Float = 800f,
+    val size: Float = 20f
+)
+
+// --- GAME VIEW ---
 class GameView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
     defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr) {
 
-    // Drawing components
+    // Bitmap
     private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private var characterBitmap: Bitmap? = null
     private var spaceBackgroundBitmap: Bitmap? = null
     private var asteroidBitmap: Bitmap? = null
 
-    // Character position (follows touch)
+    // Character
     private var characterX = 0f
     private var characterY = 0f
     private var characterSize = 0f
@@ -83,30 +89,28 @@ class GameView @JvmOverloads constructor(
     // Asteroids
     private val asteroids = mutableListOf<Asteroid>()
     private var lastSpawnTime = 0L
-    private var spawnInterval = 1500L // Initial interval in ms (1.5 seconds)
+    private var spawnInterval = 1500L
     private var gameStartTime = 0L
 
-    // Background scrolling
-    private var backgroundOffsetY = 0f
-    private val scrollSpeed = 200f // Pixels per second
+    // Bullets
+    private val bullets = mutableListOf<Bullet>()
+    private var lastBulletTime = 0L
+    private val bulletInterval = 200L // bắn mỗi 0.2 giây
 
-    // Animation and timing
+    // Background
+    private var backgroundOffsetY = 0f
+    private val scrollSpeed = 200f
+
+    // Loop
     private val gameLoop = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var isRunning = false
     private var lastTime = System.currentTimeMillis()
 
     init {
-        // Initialize paints
         backgroundPaint.isFilterBitmap = true
-
-        // Load bitmaps
         loadCharacter()
         loadSpaceBackground()
         loadAsteroid()
-
-        // Initial character position (bottom center, but will be set in onSizeChanged)
-        characterX = 0f
-        characterY = 0f
 
         gameStartTime = System.currentTimeMillis()
         lastSpawnTime = gameStartTime
@@ -129,12 +133,19 @@ class GameView @JvmOverloads constructor(
     private fun spawnAsteroid() {
         val w = width.toFloat()
         val h = height.toFloat()
-        val asteroidSize = min(w, h) * Random.nextFloat() * 0.1f + min(w, h) * 0.05f // Random size between 5% and 15% of screen min dimension
-        val x = Random.nextFloat() * (w - asteroidSize) // Random x from 0 to width - size
-        val y = -asteroidSize // Start from top (negative to ensure fully off-screen initially)
-        val speed = 100f + Random.nextFloat() * 200f // Random speed 100-300 px/s
-
+        val asteroidSize = min(w, h) * Random.nextFloat() * 0.1f + min(w, h) * 0.05f
+        val x = Random.nextFloat() * (w - asteroidSize)
+        val y = -asteroidSize
+        val speed = 100f + Random.nextFloat() * 200f
         asteroids.add(Asteroid(x, y, asteroidSize, speed))
+    }
+
+    private fun spawnBullet() {
+        val bullet = Bullet(
+            x = characterX,
+            y = characterY - characterSize / 2f
+        )
+        bullets.add(bullet)
     }
 
     private fun startGameLoop() {
@@ -146,28 +157,32 @@ class GameView @JvmOverloads constructor(
                     val deltaTime = (currentTime - lastTime) / 1000f
                     lastTime = currentTime
 
-                    // Spawn asteroids periodically
+                    // Spawn asteroid
                     if (currentTime - lastSpawnTime > spawnInterval) {
                         spawnAsteroid()
                         lastSpawnTime = currentTime
-                        // Gradually decrease interval to increase difficulty
-                        spawnInterval = maxOf(500L, spawnInterval - 100L) // Min 0.5s
+                        spawnInterval = maxOf(500L, spawnInterval - 100L)
                     }
 
-                    // Update background scroll
+                    // Spawn bullet
+                    if (currentTime - lastBulletTime > bulletInterval) {
+                        spawnBullet()
+                        lastBulletTime = currentTime
+                    }
+
+                    // Update
                     backgroundOffsetY += scrollSpeed * deltaTime
                     if (backgroundOffsetY >= spaceBackgroundBitmap?.height?.toFloat() ?: height.toFloat()) {
                         backgroundOffsetY = 0f
                     }
-
-                    // Update asteroids
                     updateAsteroids(deltaTime)
+                    updateBullets(deltaTime)
 
-                    // Check collisions
+                    // Collisions
                     checkCollisions()
 
                     invalidate()
-                    delay(16) // ~60 FPS
+                    delay(16)
                 }
             }
         }
@@ -178,8 +193,18 @@ class GameView @JvmOverloads constructor(
         while (iterator.hasNext()) {
             val asteroid = iterator.next()
             asteroid.y += asteroid.speed * deltaTime
-            // Remove if off-screen
             if (asteroid.y > height.toFloat() + asteroid.size) {
+                iterator.remove()
+            }
+        }
+    }
+
+    private fun updateBullets(deltaTime: Float) {
+        val iterator = bullets.iterator()
+        while (iterator.hasNext()) {
+            val bullet = iterator.next()
+            bullet.y -= bullet.speed * deltaTime
+            if (bullet.y < -bullet.size) {
                 iterator.remove()
             }
         }
@@ -193,6 +218,7 @@ class GameView @JvmOverloads constructor(
             characterY + characterSize / 2f
         )
 
+        // Collision character <-> asteroid
         for (asteroid in asteroids) {
             val asteroidRect = RectF(
                 asteroid.x - asteroid.size / 2f,
@@ -200,10 +226,42 @@ class GameView @JvmOverloads constructor(
                 asteroid.x + asteroid.size / 2f,
                 asteroid.y + asteroid.size / 2f
             )
-
             if (RectF.intersects(characterRect, asteroidRect)) {
                 endGame()
                 return
+            }
+        }
+
+        // Collision bullet <-> asteroid
+        val bulletIterator = bullets.iterator()
+        while (bulletIterator.hasNext()) {
+            val bullet = bulletIterator.next()
+            val bulletRect = RectF(
+                bullet.x - bullet.size / 2f,
+                bullet.y - bullet.size / 2f,
+                bullet.x + bullet.size / 2f,
+                bullet.y + bullet.size / 2f
+            )
+
+            val asteroidIterator = asteroids.iterator()
+            while (asteroidIterator.hasNext()) {
+                val asteroid = asteroidIterator.next()
+                val asteroidRect = RectF(
+                    asteroid.x - asteroid.size / 2f,
+                    asteroid.y - asteroid.size / 2f,
+                    asteroid.x + asteroid.size / 2f,
+                    asteroid.y + asteroid.size / 2f
+                )
+
+                if (RectF.intersects(bulletRect, asteroidRect)) {
+                    bulletIterator.remove()
+                    asteroid.hitCount++
+                    if (asteroid.hitCount >= 3) {
+                        asteroidIterator.remove()
+                        // TODO: thêm hiệu ứng nổ
+                    }
+                    break
+                }
             }
         }
     }
@@ -215,70 +273,42 @@ class GameView @JvmOverloads constructor(
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         }
         context.startActivity(intent)
-        // Không gọi finish() để tránh đóng MainActivity ngay lập tức
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        // Calculate character size based on screen
-        characterSize = min(w, h) * 0.15f // 15% of smaller dimension
-
-        // Set initial position to bottom center
+        characterSize = min(w, h) * 0.15f
         characterX = w / 2f
         characterY = h - characterSize / 2f
-
-        // Clamp initial position to screen bounds
         characterX = characterX.coerceIn(characterSize / 2f, (w - characterSize / 2f).toFloat())
         characterY = characterY.coerceIn(characterSize / 2f, (h - characterSize / 2f).toFloat())
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-
-        // Draw scrolling background
         drawScrollingBackground(canvas)
-
-        // Draw asteroids
         drawAsteroids(canvas)
-
-        // Draw character
+        drawBullets(canvas)
         drawCharacter(canvas)
     }
 
     private fun drawScrollingBackground(canvas: Canvas) {
         val bg = spaceBackgroundBitmap ?: return
-        val bgWidth = bg.width.toFloat()
         val bgHeight = bg.height.toFloat()
         val viewWidth = width.toFloat()
         val viewHeight = height.toFloat()
 
-        // Normalize offset to be within 0 to height
         val normalizedOffset = backgroundOffsetY % bgHeight
         val topOffset = if (normalizedOffset > 0) normalizedOffset - bgHeight else normalizedOffset
 
-        // Draw top part
-        val topSrcRect = Rect(0, 0, bg.width, bg.height)
+        val srcRect = Rect(0, 0, bg.width, bg.height)
         val topDestRect = RectF(0f, topOffset, viewWidth, topOffset + viewHeight)
-        canvas.drawBitmap(bg, topSrcRect, topDestRect, backgroundPaint)
+        canvas.drawBitmap(bg, srcRect, topDestRect, backgroundPaint)
 
-        // Draw bottom part
         val bottomOffset = topOffset + bgHeight
         val bottomDestRect = RectF(0f, bottomOffset, viewWidth, bottomOffset + viewHeight)
         if (bottomOffset < viewHeight) {
-            canvas.drawBitmap(bg, topSrcRect, bottomDestRect, backgroundPaint)
-        }
-
-        // Tile horizontally if background is narrower than screen
-        if (bgWidth < viewWidth) {
-            val horizontalTiles = (viewWidth / bgWidth).toInt() + 1
-            for (i in 1 until horizontalTiles) {
-                val horizDestTop = RectF(i * bgWidth + topOffset, topOffset, (i + 1) * bgWidth, topOffset + viewHeight)
-                canvas.drawBitmap(bg, topSrcRect, horizDestTop, backgroundPaint)
-                if (bottomOffset < viewHeight) {
-                    val horizDestBottom = RectF(i * bgWidth + bottomOffset, bottomOffset, (i + 1) * bgWidth, bottomOffset + viewHeight)
-                    canvas.drawBitmap(bg, topSrcRect, horizDestBottom, backgroundPaint)
-                }
-            }
+            canvas.drawBitmap(bg, srcRect, bottomDestRect, backgroundPaint)
         }
     }
 
@@ -297,11 +327,16 @@ class GameView @JvmOverloads constructor(
         }
     }
 
+    private fun drawBullets(canvas: Canvas) {
+        val paint = Paint().apply { color = Color.YELLOW }
+        bullets.forEach { b ->
+            canvas.drawCircle(b.x, b.y, b.size / 2f, paint)
+        }
+    }
+
     private fun drawCharacter(canvas: Canvas) {
         val character = characterBitmap ?: return
         val halfSize = characterSize / 2f
-
-        // Clamp position to screen bounds (with margin)
         val clampedX = characterX.coerceIn(halfSize, (width - halfSize).toFloat())
         val clampedY = characterY.coerceIn(halfSize, (height - halfSize).toFloat())
 
@@ -312,24 +347,23 @@ class GameView @JvmOverloads constructor(
             clampedX + halfSize,
             clampedY + halfSize
         )
-
         canvas.drawBitmap(character, srcRect, destRect, backgroundPaint)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        // Follow touch position directly
         characterX = event.x
         characterY = event.y
-        invalidate() // Redraw immediately for smooth following
+        invalidate()
         return true
     }
 
     fun resume() {
-        isRunning = false // Stop current loop
+        isRunning = false
         gameStartTime = System.currentTimeMillis()
         lastSpawnTime = gameStartTime
         spawnInterval = 1500L
         asteroids.clear()
+        bullets.clear()
         startGameLoop()
     }
 
