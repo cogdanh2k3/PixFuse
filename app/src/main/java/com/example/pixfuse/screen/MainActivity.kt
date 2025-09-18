@@ -3,6 +3,7 @@ package com.example.pixfuse.screen
 import android.content.Context
 import android.content.Intent
 import android.graphics.*
+import android.media.SoundPool
 import android.os.Bundle
 import android.util.AttributeSet
 import android.view.MotionEvent
@@ -106,7 +107,33 @@ class GameView @JvmOverloads constructor(
     private var isRunning = false
     private var lastTime = System.currentTimeMillis()
     private var check = false
+    // Sound
+    private var soundPool: SoundPool
+    private var soundShoot = 0
+    private var soundWall = 0
+    private var soundExplosion = 0
+
     init {
+        // Khởi tạo SoundPool
+        soundPool = SoundPool.Builder()
+            .setMaxStreams(5)
+            .build()
+
+        // Load âm thanh từ res/raw
+        soundShoot = soundPool.load(context, R.raw.fire, 1)
+        soundWall = soundPool.load(context, R.raw.explosion1, 1)
+        soundExplosion = soundPool.load(context, R.raw.explosion, 1)
+        backgroundPaint.isFilterBitmap = true
+        loadCharacter()
+        loadSpaceBackground()
+        loadAsteroid()
+
+        gameStartTime = System.currentTimeMillis()
+        lastSpawnTime = gameStartTime
+
+        startGameLoop()
+    }
+/*    init {
         backgroundPaint.isFilterBitmap = true
         loadCharacter()
         loadSpaceBackground()
@@ -117,7 +144,7 @@ class GameView @JvmOverloads constructor(
 
         startGameLoop()
         //spawnAsteroids(5) // Ví dụ spawn 5 thiên thạch
-    }
+    }*/
     private fun spawnAsteroids(count: Int) {
         repeat(count){
             spawnAsteroid()
@@ -153,6 +180,7 @@ class GameView @JvmOverloads constructor(
             y = characterY - characterSize / 2f
         )
         bullets.add(bullet)
+        soundPool.play(soundShoot, 0.5f, 0.5f, 1, 0, 1f)
     }
     private fun startGameLoop() {
         if (!isRunning) {
@@ -278,6 +306,7 @@ class GameView @JvmOverloads constructor(
                     asteroid.hitCount++
                     if (asteroid.hitCount >= 3) {
                         asteroidIterator.remove()
+                        soundPool.play(soundExplosion, 1f, 1f, 1, 0, 1f)
                         // TODO: thêm hiệu ứng nổ
                     }
                     break
@@ -415,11 +444,22 @@ class GameView @JvmOverloads constructor(
                     characterX += dx   // di chuyển ngang
                     lastX = event.x
                 }
+
+                // Check biên trong ACTION_MOVE
+                if (characterX - characterSize / 2f < 0) {
+                    characterX = characterSize / 2f
+                    soundPool.play(soundWall, 1f, 1f, 1, 0, 1f)
+                } else if (characterX + characterSize / 2f > width) {
+                    characterX = width - characterSize / 2f
+                    soundPool.play(soundWall, 1f, 1f, 1, 0, 1f)
+                }
             }
         }
+
         invalidate()
         return true
     }
+
 
     fun resume() {
         isRunning = false
