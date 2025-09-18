@@ -175,11 +175,10 @@ class GameView @JvmOverloads constructor(
                     //}
 
                     // Spawn bullet
-                    if (currentTime - lastBulletTime > bulletInterval) {
-                        spawnBullet()
-                        lastBulletTime = currentTime
-                    }
-
+ //                   if (currentTime - lastBulletTime > bulletInterval) {
+  //                      spawnBullet()
+  //                      lastBulletTime = currentTime
+   //                 }
                     // Update
                     backgroundOffsetY += scrollSpeed * deltaTime
                     if (backgroundOffsetY >= spaceBackgroundBitmap?.height?.toFloat() ?: height.toFloat()) {
@@ -371,9 +370,53 @@ class GameView @JvmOverloads constructor(
         canvas.drawBitmap(character, srcRect, destRect, backgroundPaint)
     }
 
+   // override fun onTouchEvent(event: MotionEvent): Boolean {
+   //     characterX = event.x
+   //     characterY = event.y
+   //     invalidate()
+   //     return true
+   // }
+/*    override fun onTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                if (event.buttonState == MotionEvent.BUTTON_SECONDARY) {
+                    // Chuột phải (trên PC)
+                    spawnBullet()
+                } else {
+                    // Chạm màn hình → di chuyển
+                    characterX = event.x
+                    characterY = event.y
+                }
+            }
+
+            MotionEvent.ACTION_MOVE -> {
+                // Khi kéo ngón tay -> di chuyển máy bay
+                characterX = event.x
+                characterY = event.y
+            }
+        }
+
+        invalidate()
+        return true
+    }*/
+   private var lastX = 0f
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        characterX = event.x
-        characterY = event.y
+        when (event.actionMasked) {
+
+            MotionEvent.ACTION_DOWN -> {
+                lastX = event.x
+                spawnBullet() // bấm xuống thì bắn đạn
+            }
+
+            MotionEvent.ACTION_MOVE -> {
+                val dx = event.x - lastX
+                if (Math.abs(dx) > 10) { // ngưỡng để nhận là vuốt
+                    characterX += dx   // di chuyển ngang
+                    lastX = event.x
+                }
+            }
+        }
         invalidate()
         return true
     }
