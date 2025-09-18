@@ -11,6 +11,7 @@ import android.view.WindowManager
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import com.example.pixfuse.R
+import com.example.pixfuse.SoundManager
 import kotlinx.coroutines.*
 import kotlin.math.min
 import kotlin.random.Random
@@ -106,6 +107,10 @@ class GameView @JvmOverloads constructor(
     private var isRunning = false
     private var lastTime = System.currentTimeMillis()
     private var check = false
+
+    // Sound
+    private val soundManager = SoundManager(context)
+
     init {
         backgroundPaint.isFilterBitmap = true
         loadCharacter()
@@ -153,6 +158,7 @@ class GameView @JvmOverloads constructor(
             y = characterY - characterSize / 2f
         )
         bullets.add(bullet)
+        soundManager.playSound(SoundManager.SoundType.SHOOT)
     }
     private fun startGameLoop() {
         if (!isRunning) {
@@ -278,7 +284,7 @@ class GameView @JvmOverloads constructor(
                     asteroid.hitCount++
                     if (asteroid.hitCount >= 3) {
                         asteroidIterator.remove()
-                        // TODO: thêm hiệu ứng nổ
+                        soundManager.playSound(SoundManager.SoundType.EXPLOSION)
                     }
                     break
                 }
@@ -288,6 +294,8 @@ class GameView @JvmOverloads constructor(
 
     private fun endGame() {
         isRunning = false
+        soundManager.playSound(SoundManager.SoundType.GAME_OVER)
+        soundManager.stopBGM()
         val intent = Intent(context, GameOverActivity::class.java).apply {
             putExtra(GameOverActivity.EXTRA_IS_WIN, false)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
@@ -357,48 +365,27 @@ class GameView @JvmOverloads constructor(
     private fun drawCharacter(canvas: Canvas) {
         val character = characterBitmap ?: return
         val halfSize = characterSize / 2f
-        val clampedX = characterX.coerceIn(halfSize, (width - halfSize).toFloat())
-        val clampedY = characterY.coerceIn(halfSize, (height - halfSize).toFloat())
+        val newX = characterX.coerceIn(halfSize, (width - halfSize).toFloat())
+        val newY = characterY.coerceIn(halfSize, (height - halfSize).toFloat())
+
+        if (newX != characterX || newY != characterY) {
+            soundManager.playSound(SoundManager.SoundType.WALL_HIT)
+        }
+
+        characterX = newX
+        characterY = newY
 
         val srcRect = Rect(0, 0, character.width, character.height)
         val destRect = RectF(
-            clampedX - halfSize,
-            clampedY - halfSize,
-            clampedX + halfSize,
-            clampedY + halfSize
+            characterX - halfSize,
+            characterY - halfSize,
+            characterX + halfSize,
+            characterY + halfSize
         )
         canvas.drawBitmap(character, srcRect, destRect, backgroundPaint)
     }
 
-   // override fun onTouchEvent(event: MotionEvent): Boolean {
-   //     characterX = event.x
-   //     characterY = event.y
-   //     invalidate()
-   //     return true
-   // }
-/*    override fun onTouchEvent(event: MotionEvent): Boolean {
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
-                if (event.buttonState == MotionEvent.BUTTON_SECONDARY) {
-                    // Chuột phải (trên PC)
-                    spawnBullet()
-                } else {
-                    // Chạm màn hình → di chuyển
-                    characterX = event.x
-                    characterY = event.y
-                }
-            }
 
-            MotionEvent.ACTION_MOVE -> {
-                // Khi kéo ngón tay -> di chuyển máy bay
-                characterX = event.x
-                characterY = event.y
-            }
-        }
-
-        invalidate()
-        return true
-    }*/
    private var lastX = 0f
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
