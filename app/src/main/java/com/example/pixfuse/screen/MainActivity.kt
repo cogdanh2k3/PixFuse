@@ -3,6 +3,7 @@ package com.example.pixfuse.screen
 import android.content.Context
 import android.content.Intent
 import android.graphics.*
+import android.media.MediaPlayer
 import android.media.SoundPool
 import android.os.Bundle
 import android.util.AttributeSet
@@ -12,9 +13,14 @@ import android.view.WindowManager
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import com.example.pixfuse.R
+import com.example.pixfuse.game.SupportItem
 import kotlinx.coroutines.*
 import kotlin.math.min
 import kotlin.random.Random
+import com.example.pixfuse.Object.Asteroid
+import com.example.pixfuse.Object.Bomb
+import com.example.pixfuse.Object.Laser
+import com.example.pixfuse.Object.SupportManager
 
 class MainActivity : AppCompatActivity() {
     private lateinit var gameView: GameView
@@ -52,16 +58,6 @@ class MainActivity : AppCompatActivity() {
         gameView.pause()
     }
 }
-
-// --- DATA CLASS ---
-data class Asteroid(
-    var x: Float,
-    var y: Float,
-    val size: Float,
-    val speed: Float,
-    var hitCount: Int = 0 // số lần trúng đạn
-)
-
 data class Bullet(
     var x: Float,
     var y: Float,
@@ -96,7 +92,7 @@ class GameView @JvmOverloads constructor(
     // Bullets
     private val bullets = mutableListOf<Bullet>()
     private var lastBulletTime = 0L
-    private val bulletInterval = 200L // bắn mỗi 0.2 giây
+    private val bulletInterval = 500L // bắn mỗi 0.2 giây
 
     // Background
     private var backgroundOffsetY = 0f
@@ -112,7 +108,35 @@ class GameView @JvmOverloads constructor(
     private var soundShoot = 0
     private var soundWall = 0
     private var soundExplosion = 0
+    // Music
+    private var bgMusic: MediaPlayer? = null
+    private var isMusicOn = true
+    private var isSoundOn = true
+    private var soundButtonRect = RectF()
+    private var musicButtonRect = RectF()
+/*    private var soundBitmap: Bitmap? = null
+    private var musicBitmap: Bitmap? = null*/
+    private var soundBitmap: Bitmap? = null
+    private var soundInactiveBitmap: Bitmap? = null
+    private var musicBitmap: Bitmap? = null
+    private var musicInactiveBitmap: Bitmap? = null
+    //Ho tro
+    // Support Items
+    private val supportItems = mutableListOf<SupportItem>()
+    private var lastSupportSpawn = 0L
+    private val supportInterval = 3000L // spawn mỗi 8 giây
+    private var bulletLevel = 1 // mặc định 1 viên, tối đa 3
+    private val bombs = mutableListOf<Bomb>()
+    private var bombMode = false
+    private var bombModeEndTime = 0L
 
+    private lateinit var heartFull: Bitmap
+    private lateinit var heartEmpty: Bitmap
+    private val supportManager = SupportManager()
+    private fun loadHearts() {
+        heartFull = BitmapFactory.decodeResource(context.resources, R.drawable.full_heart)
+        heartEmpty = BitmapFactory.decodeResource(context.resources, R.drawable.empty_heart)
+    }
     init {
         // Khởi tạo SoundPool
         soundPool = SoundPool.Builder()
@@ -127,24 +151,46 @@ class GameView @JvmOverloads constructor(
         loadCharacter()
         loadSpaceBackground()
         loadAsteroid()
-
+        loadHearts()
         gameStartTime = System.currentTimeMillis()
         lastSpawnTime = gameStartTime
 
         startGameLoop()
+        // Nhạc nền
+        soundBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.sound)
+        soundInactiveBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.sound_inactive)
+
+        musicBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.music)
+        musicInactiveBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.music_inactive)
+
+        bgMusic = MediaPlayer.create(context, R.raw.music)
+        bgMusic?.isLooping = true
+        bgMusic?.setVolume(0.5f, 0.5f)
+        bgMusic?.start()
+
     }
-/*    init {
-        backgroundPaint.isFilterBitmap = true
-        loadCharacter()
-        loadSpaceBackground()
-        loadAsteroid()
+    //Support Item
+private fun updateSupportItems(deltaTime: Float) {
+    val iterator = supportItems.iterator()
+    while (iterator.hasNext()) {
+        val item = iterator.next()
+        if (item.update(deltaTime, height.toFloat())) {
+            iterator.remove()
+        }
+    }
 
-        gameStartTime = System.currentTimeMillis()
-        lastSpawnTime = gameStartTime
+    val current = System.currentTimeMillis()
+    if (current - lastSupportSpawn > supportInterval) {
+        supportItems.add(SupportItem.spawn(context, width.toFloat(), height.toFloat()))
+        lastSupportSpawn = current
+    }
+}
 
-        startGameLoop()
-        //spawnAsteroids(5) // Ví dụ spawn 5 thiên thạch
-    }*/
+    private fun drawSupportItems(canvas: Canvas) {
+        supportItems.forEach { it.draw(canvas) }
+    }
+
+
     private fun spawnAsteroids(count: Int) {
         repeat(count){
             spawnAsteroid()
@@ -159,29 +205,66 @@ class GameView @JvmOverloads constructor(
         spaceBackgroundBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.bg_space_seamless)
     }
 
+    private var asteroidBitmaps: List<Bitmap>? = null
+
     private fun loadAsteroid() {
-        asteroidBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.asteroid_2)
+        asteroidBitmaps = listOf(
+            BitmapFactory.decodeResource(context.resources, R.drawable.bullbasaur_8),
+            BitmapFactory.decodeResource(context.resources, R.drawable.charmander_4),
+            BitmapFactory.decodeResource(context.resources, R.drawable.abra_1024),
+            BitmapFactory.decodeResource(context.resources, R.drawable.eevee_32),
+            BitmapFactory.decodeResource(context.resources, R.drawable.snorlax_128)
+        )
     }
 
     private fun spawnAsteroid() {
         val w = width.toFloat()
         val h = height.toFloat()
-        //val asteroidSize = min(w, h)* Random.nextFloat() * 0.1f + min(w, h) * 0.05f
         val asteroidSize = min(w, h) * 0.1f + min(w, h) * 0.05f
         val x = Random.nextFloat() * (w - asteroidSize)
         val y = -asteroidSize
-        val speed = 100f + Random.nextFloat() * 200f
-        asteroids.add(Asteroid(x, y, asteroidSize, speed))
+        val speed = 200f + Random.nextFloat() * 200f
+
+        val bmp = asteroidBitmaps?.random()  // chọn ngẫu nhiên sprite
+
+        asteroids.add(Asteroid(x, y, asteroidSize, speed, bitmap = bmp))
     }
 
-    private fun spawnBullet() {
-        val bullet = Bullet(
-            x = characterX,
-            y = characterY - characterSize / 2f
-        )
-        bullets.add(bullet)
+private fun spawnBullet() {
+    when (bulletLevel) {
+        1 -> {
+            bullets.add(Bullet(x = characterX, y = characterY - characterSize / 2f))
+        }
+        2 -> {
+            bullets.add(Bullet(x = characterX - 20, y = characterY - characterSize / 2f))
+            bullets.add(Bullet(x = characterX + 20, y = characterY - characterSize / 2f))
+        }
+        3 -> {
+            bullets.add(Bullet(x = characterX, y = characterY - characterSize / 2f))
+            bullets.add(Bullet(x = characterX - 30, y = characterY - characterSize / 2f))
+            bullets.add(Bullet(x = characterX + 30, y = characterY - characterSize / 2f))
+        }
+        4 -> {
+            bullets.add(Bullet(x = characterX - 20, y = characterY - characterSize / 2f))
+            bullets.add(Bullet(x = characterX + 20, y = characterY - characterSize / 2f))
+            bullets.add(Bullet(x = characterX - 40, y = characterY - characterSize / 2f))
+            bullets.add(Bullet(x = characterX + 40, y = characterY - characterSize / 2f))
+
+        }
+        5 -> {
+            bullets.add(Bullet(x = characterX, y = characterY - characterSize / 2f))
+            bullets.add(Bullet(x = characterX - 30, y = characterY - characterSize / 2f))
+            bullets.add(Bullet(x = characterX + 30, y = characterY - characterSize / 2f))
+            bullets.add(Bullet(x = characterX - 60, y = characterY - characterSize / 2f))
+            bullets.add(Bullet(x = characterX + 60, y = characterY - characterSize / 2f))
+        }
+    }
+
+    if (isSoundOn) {
         soundPool.play(soundShoot, 0.5f, 0.5f, 1, 0, 1f)
     }
+}
+
     private fun startGameLoop() {
         if (!isRunning) {
             isRunning = true
@@ -190,63 +273,104 @@ class GameView @JvmOverloads constructor(
                     val currentTime = System.currentTimeMillis()
                     val deltaTime = (currentTime - lastTime) / 1000f
                     lastTime = currentTime
-                    if(check==false){
+
+                    if (!check) {
                         spawnAsteroids(5)
-                        check=true
+                        check = true
                     }
 
-                    // Spawn asteroid
-                   // if (currentTime - lastSpawnTime > spawnInterval) {
-                     //   spawnAsteroid()
-                       // lastSpawnTime = currentTime
-                        //spawnInterval = maxOf(500L, spawnInterval - 100L)
-                    //}
-
-                    // Spawn bullet
- //                   if (currentTime - lastBulletTime > bulletInterval) {
-  //                      spawnBullet()
-  //                      lastBulletTime = currentTime
-   //                 }
                     // Update
                     backgroundOffsetY += scrollSpeed * deltaTime
-                    if (backgroundOffsetY >= spaceBackgroundBitmap?.height?.toFloat() ?: height.toFloat()) {
+                    if (backgroundOffsetY >= (spaceBackgroundBitmap?.height?.toFloat() ?: height.toFloat())) {
                         backgroundOffsetY = 0f
                     }
-                    updateAsteroids(deltaTime)
-                    updateBullets(deltaTime)
 
+                    updateBullets(deltaTime)   // ✅ truyền deltaTime
+                    updateAsteroids(deltaTime)
+                    updateSupportItems(deltaTime)
+                    updateLasers()
+                    updateBombs(deltaTime)
+                    supportManager.update()
+                    if (bombMode && System.currentTimeMillis() > bombModeEndTime) {
+                        bombMode = false
+                    }
                     // Collisions
                     checkCollisions()
 
                     invalidate()
-                    delay(16)
+                    delay(16) // ~60fps
                 }
             }
         }
     }
+    private fun updateBombs(deltaTime: Float) {
+        val iterator = bombs.iterator()
+        while (iterator.hasNext()) {
+            val bomb = iterator.next()
 
-//    private fun updateAsteroids(deltaTime: Float) {
-//        val iterator = asteroids.iterator()
-//        while (iterator.hasNext()) {
-//            val asteroid = iterator.next()
-//            asteroid.y += asteroid.speed * deltaTime
-//            if (asteroid.y > height.toFloat() + asteroid.size) {
-//                iterator.remove()
-//}
-//        }
-//    }
-    private fun updateAsteroids(deltaTime: Float) {
-        asteroids.forEach { asteroid ->
-            asteroid.y += asteroid.speed * deltaTime
+            if (!bomb.isExploded) {
+                bomb.y -= bomb.speed * deltaTime
 
-            // Nếu thiên thạch chạm đáy màn hình → spawn lại từ trên
-            if (asteroid.y - asteroid.size / 2f > height) {
-                asteroid.y = -asteroid.size / 2f   // quay lại bên trên
-                asteroid.hitCount = 0              // reset số lần trúng đạn
+                // Check va chạm bom với quái
+                val hitEnemy = asteroids.any { asteroid ->
+                    val dx = asteroid.x - bomb.x
+                    val dy = asteroid.y - bomb.y
+                    val distance = dx * dx + dy * dy
+                    val minDist = (asteroid.size / 2f + bomb.size / 2f)
+                    distance <= minDist * minDist
+                }
+
+                if (hitEnemy) {
+                    bomb.isExploded = true
+                    bomb.explodeTime = System.currentTimeMillis()
+                    bomb.explodeRadius = bomb.size * 3f   // tăng phạm vi nổ (gấp 3 lần size bom)
+                    handleBombExplosion(bomb)
+                }
+
+                // Nếu bay ra ngoài màn hình thì xóa
+                if (bomb.y + bomb.size < 0) {
+                    iterator.remove()
+                }
+
+            } else {
+                // Bom tồn tại 0.4 giây sau khi nổ
+                if (System.currentTimeMillis() - bomb.explodeTime > 400) {
+                    iterator.remove()
+                }
             }
         }
     }
+    private fun handleBombExplosion(bomb: Bomb) {
+        val bx = bomb.x
+        val by = bomb.y
+        val r = bomb.explodeRadius
 
+        asteroids.forEach { asteroid ->
+            val dx = asteroid.x - bx
+            val dy = asteroid.y - by
+            if (dx * dx + dy * dy <= r * r) {
+                // Reset quái về random trên cao
+                asteroid.x = Random.nextFloat() * width
+                asteroid.y = -asteroid.size / 2f
+                asteroid.hitCount = 0
+
+                if (isSoundOn) {
+                    soundPool.play(soundExplosion, 1f, 1f, 1, 0, 1f)
+                }
+            }
+        }
+    }
+private fun updateAsteroids(deltaTime: Float) {
+    asteroids.forEach { asteroid ->
+        asteroid.y += asteroid.speed * deltaTime
+
+        if (asteroid.y - asteroid.size / 2f > height) {
+            asteroid.x = Random.nextFloat() * width          // random ngang
+            asteroid.y = -asteroid.size / 2f     // random cao hơn màn hình
+            asteroid.hitCount = 0
+        }
+    }
+}
     private fun updateBullets(deltaTime: Float) {
         val iterator = bullets.iterator()
         while (iterator.hasNext()) {
@@ -254,6 +378,57 @@ class GameView @JvmOverloads constructor(
             bullet.y -= bullet.speed * deltaTime
             if (bullet.y < -bullet.size) {
                 iterator.remove()
+            }
+        }
+
+        // Auto-fire
+        val now = System.currentTimeMillis()
+        if (now - lastBulletTime > bulletInterval) {
+            if (bombMode) {
+                spawnBomb()
+            } else {
+                spawnBullet()
+            }
+            lastBulletTime = now
+        }
+    }
+    private fun spawnBomb() {
+        val bomb = Bomb(
+            x = characterX,
+            y = characterY - characterSize / 2f,
+            size = characterSize * 0.8f,
+            speed = 400f,
+            explodeRadius = characterSize * 3f
+        )
+        bombs.add(bomb)
+
+        if (isSoundOn) {
+            soundPool.play(soundShoot, 0.5f, 0.5f, 1, 0, 1f)
+        }
+    }
+
+    private fun drawHearts(canvas: Canvas) {
+        val heartSize = 80   // kích thước tim (pixel)
+        val margin = 20      // khoảng cách
+
+        for (i in 0 until supportManager.maxHP) {
+            val x = margin + i * (heartSize + margin)
+            val y = margin
+
+            if (i < supportManager.currentHP) {
+                canvas.drawBitmap(
+                    Bitmap.createScaledBitmap(heartFull, heartSize, heartSize, true),
+                    x.toFloat(),
+                    y.toFloat(),
+                    null
+                )
+            } else {
+                canvas.drawBitmap(
+                    Bitmap.createScaledBitmap(heartEmpty, heartSize, heartSize, true),
+                    x.toFloat(),
+                    y.toFloat(),
+                    null
+                )
             }
         }
     }
@@ -266,7 +441,9 @@ class GameView @JvmOverloads constructor(
             characterY + characterSize / 2f
         )
 
+        // ======================
         // Collision character <-> asteroid
+        // ======================
         for (asteroid in asteroids) {
             val asteroidRect = RectF(
                 asteroid.x - asteroid.size / 2f,
@@ -275,12 +452,69 @@ class GameView @JvmOverloads constructor(
                 asteroid.y + asteroid.size / 2f
             )
             if (RectF.intersects(characterRect, asteroidRect)) {
-                endGame()
-                return
+                val isDead = supportManager.takeDamage()
+                if (isDead) {
+                    endGame()
+                    return
+                } else {
+                    // reset asteroid khi va chạm
+                    asteroid.x = Random.nextFloat() * width
+                    asteroid.y = -asteroid.size / 2f
+                    asteroid.hitCount = 0
+                }
             }
         }
 
+        // ======================
+        // Collision character <-> support items
+        // ======================
+        val itemIterator = supportItems.iterator()
+        while (itemIterator.hasNext()) {
+            val item = itemIterator.next()
+            if (RectF.intersects(characterRect, item.getRect())) {
+                itemIterator.remove()
+                when (item.type) {
+                    SupportItem.Type.BULLET_UPGRADE -> {
+                        bulletLevel = (bulletLevel + 1).coerceAtMost(5)
+                    }
+                    SupportItem.Type.BIG_BULLET -> shootBigBullet()
+                    SupportItem.Type.LASER -> shootLaser()
+                    SupportItem.Type.BOMB -> {
+                        bombMode = true
+                        bombModeEndTime = System.currentTimeMillis() + 10_000
+                    }
+                    SupportItem.Type.SHIELD -> supportManager.activateShield(3)
+                    SupportItem.Type.HEART -> supportManager.heal(1)
+                }
+            }
+        }
+
+        // ======================
+        // Collision laser <-> asteroid
+        // ======================
+        lasers.forEach { laser ->
+            val laserRect = RectF(laser.x - 10, 0f, laser.x + 10, laser.y)
+            asteroids.forEach { asteroid ->
+                val asteroidRect = RectF(
+                    asteroid.x - asteroid.size / 2f,
+                    asteroid.y - asteroid.size / 2f,
+                    asteroid.x + asteroid.size / 2f,
+                    asteroid.y + asteroid.size / 2f
+                )
+                if (RectF.intersects(laserRect, asteroidRect)) {
+                    asteroid.x = Random.nextFloat() * width
+                    asteroid.y = -asteroid.size / 2f
+                    asteroid.hitCount = 0
+                    if (isSoundOn) {
+                        soundPool.play(soundExplosion, 1f, 1f, 1, 0, 1f)
+                    }
+                }
+            }
+        }
+
+        // ======================
         // Collision bullet <-> asteroid
+        // ======================
         val bulletIterator = bullets.iterator()
         while (bulletIterator.hasNext()) {
             val bullet = bulletIterator.next()
@@ -304,10 +538,15 @@ class GameView @JvmOverloads constructor(
                 if (RectF.intersects(bulletRect, asteroidRect)) {
                     bulletIterator.remove()
                     asteroid.hitCount++
+
                     if (asteroid.hitCount >= 3) {
-                        asteroidIterator.remove()
-                        soundPool.play(soundExplosion, 1f, 1f, 1, 0, 1f)
-                        // TODO: thêm hiệu ứng nổ
+                        asteroid.x = Random.nextFloat() * width
+                        asteroid.y = -asteroid.size / 2f
+                        asteroid.hitCount = 0
+                        if (isSoundOn) {
+                            soundPool.play(soundExplosion, 1f, 1f, 1, 0, 1f)
+                        }
+                        // TODO: hiệu ứng nổ asteroid
                     }
                     break
                 }
@@ -315,6 +554,91 @@ class GameView @JvmOverloads constructor(
         }
     }
 
+    private fun shootBomb() {
+        bombs.add(
+            Bomb(
+                x = characterX,
+                y = characterY - characterSize / 2f
+            )
+        )
+        if (isSoundOn) {
+            soundPool.play(soundShoot, 1f, 1f, 1, 0, 1f)
+        }
+    }
+    private fun drawBombs(canvas: Canvas) {
+        bombs.forEach { bomb ->
+            if (!bomb.isExploded) {
+                // Vẽ quả bom xanh lá cây với viền đậm
+                val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.GREEN
+                    style = Paint.Style.FILL
+                }
+                val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.rgb(0, 150, 0) // xanh đậm
+                    style = Paint.Style.STROKE
+                    strokeWidth = 4f
+                }
+
+                canvas.drawCircle(bomb.x, bomb.y, bomb.size / 2f, fillPaint)
+                canvas.drawCircle(bomb.x, bomb.y, bomb.size / 2f, strokePaint)
+
+            } else {
+                // Hiệu ứng nổ với gradient
+                val gradient = RadialGradient(
+                    bomb.x, bomb.y, bomb.explodeRadius,
+                    intArrayOf(Color.YELLOW, Color.RED, Color.TRANSPARENT),
+                    floatArrayOf(0.2f, 0.7f, 1f),
+                    Shader.TileMode.CLAMP
+                )
+                val explosionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    shader = gradient
+                    style = Paint.Style.FILL
+                }
+
+                // Vẽ vòng tròn nổ
+                canvas.drawCircle(bomb.x, bomb.y, bomb.explodeRadius, explosionPaint)
+
+                // Thêm sóng tròn đỏ bên ngoài
+                val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.RED
+                    style = Paint.Style.STROKE
+                    strokeWidth = 6f
+                    alpha = 180
+                }
+                canvas.drawCircle(bomb.x, bomb.y, bomb.explodeRadius, ringPaint)
+            }
+        }
+    }
+
+    private fun shootBigBullet() {
+        bullets.add(Bullet(
+            x = characterX,
+            y = characterY - characterSize / 2f,
+            size = 60f, // gấp 3 lần size mặc định
+            speed = 1000f // có thể nhanh hơn đạn thường
+        ))
+        if (isSoundOn) {
+            soundPool.play(soundShoot, 0.8f, 0.8f, 1, 0, 1f)
+        }
+    }
+    private val lasers = mutableListOf<Laser>()
+
+    private fun shootLaser() {
+        lasers.add(Laser(x = characterX, y = characterY - characterSize / 2f))
+        if (isSoundOn) {
+            soundPool.play(soundShoot, 1f, 1f, 1, 0, 1f)
+        }
+    }
+    private fun updateLasers() {
+        val current = System.currentTimeMillis()
+        val iterator = lasers.iterator()
+        while (iterator.hasNext()) {
+            val laser = iterator.next()
+            if (current - laser.spawnTime > laser.duration) {
+                iterator.remove()
+            }
+        }
+    }
     private fun endGame() {
         isRunning = false
         val intent = Intent(context, GameOverActivity::class.java).apply {
@@ -331,6 +655,11 @@ class GameView @JvmOverloads constructor(
         characterY = h - characterSize / 2f
         characterX = characterX.coerceIn(characterSize / 2f, (w - characterSize / 2f).toFloat())
         characterY = characterY.coerceIn(characterSize / 2f, (h - characterSize / 2f).toFloat())
+
+        val buttonSize = min(w, h) * 0.1f
+        soundButtonRect = RectF(0f, h/2f - buttonSize/2, buttonSize, h/2f + buttonSize/2)
+        musicButtonRect = RectF(w - buttonSize, h/2f - buttonSize/2, w.toFloat(), h/2f + buttonSize/2)
+
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -339,8 +668,89 @@ class GameView @JvmOverloads constructor(
         drawAsteroids(canvas)
         drawBullets(canvas)
         drawCharacter(canvas)
+        drawButtons(canvas)
+        drawSupportItems(canvas)
+        drawLasers(canvas)
+        drawBombs(canvas)
+        drawHearts(canvas)
+        // Vẽ nhân vật
+     //   canvas.drawBitmap(characterBitmap, characterX - characterSize/2f, characterY - characterSize/2f, null)
+
+// Vẽ khiên bao quanh
+        if (supportManager.isShieldActive()) {
+            val shieldPaint = Paint().apply {
+                color = Color.CYAN
+                style = Paint.Style.STROKE
+                strokeWidth = 8f
+                isAntiAlias = true
+            }
+            // vòng ngoài
+            canvas.drawCircle(characterX, characterY, characterSize.toFloat(), shieldPaint)
+
+            // hiệu ứng glow
+            shieldPaint.alpha = 100
+            canvas.drawCircle(characterX, characterY, characterSize * 1.3f, shieldPaint)
+        }
+
+// Hiệu ứng nhấp nháy khi invincible
+        if (supportManager.isInvincible) {
+            val blinkPaint = Paint().apply {
+                color = Color.WHITE
+                alpha = ((System.currentTimeMillis() / 200) % 2 * 180).toInt() // nhấp nháy 200ms
+                style = Paint.Style.FILL
+                isAntiAlias = true
+            }
+            canvas.drawCircle(characterX, characterY, characterSize.toFloat(), blinkPaint)
+        }
+    }
+    private fun drawLasers(canvas: Canvas) {
+        val paint = Paint().apply {
+            color = Color.CYAN
+            strokeWidth = 25f
+            alpha = 180
+        }
+        lasers.forEach { laser ->
+            canvas.drawLine(laser.x, laser.y, laser.x, 0f, paint)
+        }
     }
 
+    private fun drawButtons(canvas: Canvas) {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        // ----- SOUND BUTTON -----
+        // Vẽ nền trắng (to hơn icon một chút)
+        val soundBg = RectF(
+            soundButtonRect.left - 15,
+            soundButtonRect.top - 15,
+            soundButtonRect.right + 15,
+            soundButtonRect.bottom + 15
+        )
+        paint.color = Color.WHITE
+        canvas.drawRoundRect(soundBg, 20f, 20f, paint) // bo góc 20px
+
+        // Vẽ icon sound
+        val soundBmp = if (isSoundOn) soundBitmap else soundInactiveBitmap
+        soundBmp?.let { bmp ->
+            val src = Rect(0, 0, bmp.width, bmp.height)
+            canvas.drawBitmap(bmp, src, soundButtonRect, null)
+        }
+
+        // ----- MUSIC BUTTON -----
+        val musicBg = RectF(
+            musicButtonRect.left - 15,
+            musicButtonRect.top - 15,
+            musicButtonRect.right + 15,
+            musicButtonRect.bottom + 15
+        )
+        paint.color = Color.WHITE
+        canvas.drawRoundRect(musicBg, 20f, 20f, paint)
+
+        val musicBmp = if (isMusicOn) musicBitmap else musicInactiveBitmap
+        musicBmp?.let { bmp ->
+            val src = Rect(0, 0, bmp.width, bmp.height)
+            canvas.drawBitmap(bmp, src, musicButtonRect, null)
+        }
+    }
     private fun drawScrollingBackground(canvas: Canvas) {
         val bg = spaceBackgroundBitmap ?: return
         val bgHeight = bg.height.toFloat()
@@ -361,7 +771,7 @@ class GameView @JvmOverloads constructor(
         }
     }
 
-    private fun drawAsteroids(canvas: Canvas) {
+/*    private fun drawAsteroids(canvas: Canvas) {
         val asteroid = asteroidBitmap ?: return
         asteroids.forEach { ast ->
             val halfSize = ast.size / 2f
@@ -374,8 +784,21 @@ class GameView @JvmOverloads constructor(
             )
             canvas.drawBitmap(asteroid, srcRect, destRect, backgroundPaint)
         }
+    }*/
+private fun drawAsteroids(canvas: Canvas) {
+    asteroids.forEach { ast ->
+        val bmp = ast.bitmap ?: return@forEach
+        val halfSize = ast.size / 2f
+        val srcRect = Rect(0, 0, bmp.width, bmp.height)
+        val destRect = RectF(
+            ast.x - halfSize,
+            ast.y - halfSize,
+            ast.x + halfSize,
+            ast.y + halfSize
+        )
+        canvas.drawBitmap(bmp, srcRect, destRect, backgroundPaint)
     }
-
+}
     private fun drawBullets(canvas: Canvas) {
         val paint = Paint().apply { color = Color.YELLOW }
         bullets.forEach { b ->
@@ -398,67 +821,111 @@ class GameView @JvmOverloads constructor(
         )
         canvas.drawBitmap(character, srcRect, destRect, backgroundPaint)
     }
-
-   // override fun onTouchEvent(event: MotionEvent): Boolean {
-   //     characterX = event.x
-   //     characterY = event.y
-   //     invalidate()
-   //     return true
-   // }
-/*    override fun onTouchEvent(event: MotionEvent): Boolean {
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
-                if (event.buttonState == MotionEvent.BUTTON_SECONDARY) {
-                    // Chuột phải (trên PC)
-                    spawnBullet()
-                } else {
-                    // Chạm màn hình → di chuyển
-                    characterX = event.x
-                    characterY = event.y
-                }
-            }
-
-            MotionEvent.ACTION_MOVE -> {
-                // Khi kéo ngón tay -> di chuyển máy bay
-                characterX = event.x
-                characterY = event.y
-            }
-        }
-
-        invalidate()
-        return true
-    }*/
    private var lastX = 0f
-
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        when (event.actionMasked) {
+        val x = event.x
+        val y = event.y
 
+        when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                lastX = event.x
-                spawnBullet() // bấm xuống thì bắn đạn
+                // Check bấm vào nút sound
+                if (soundButtonRect.contains(x, y)) {
+                    isSoundOn = !isSoundOn
+                    isMusicOn = isSoundOn
+                    if (isMusicOn) {
+                        bgMusic?.start()
+                    } else {
+                        bgMusic?.pause()
+                    }
+                    return true
+                }
+
+                // Check bấm vào nút music
+                if (musicButtonRect.contains(x, y)) {
+                    isMusicOn = !isMusicOn
+                    if (isMusicOn) {
+                        bgMusic?.start()
+                    } else {
+                        bgMusic?.pause()
+                    }
+                    return true
+                }
+
+                // Nếu không bấm nút nào → di chuyển máy bay
+                characterX = x
+                characterY = y
             }
 
             MotionEvent.ACTION_MOVE -> {
-                val dx = event.x - lastX
-                if (Math.abs(dx) > 10) { // ngưỡng để nhận là vuốt
-                    characterX += dx   // di chuyển ngang
-                    lastX = event.x
-                }
-
-                // Check biên trong ACTION_MOVE
-                if (characterX - characterSize / 2f < 0) {
-                    characterX = characterSize / 2f
-                    soundPool.play(soundWall, 1f, 1f, 1, 0, 1f)
-                } else if (characterX + characterSize / 2f > width) {
-                    characterX = width - characterSize / 2f
-                    soundPool.play(soundWall, 1f, 1f, 1, 0, 1f)
-                }
+                // Di chuyển máy bay theo tay
+                characterX = x
+                characterY = y
             }
         }
+
+        // Giữ trong màn hình
+        characterX = characterX.coerceIn(characterSize / 2f, width - characterSize / 2f)
+        characterY = characterY.coerceIn(characterSize / 2f, height - characterSize / 2f)
 
         invalidate()
         return true
     }
+
+    /*
+        override fun onTouchEvent(event: MotionEvent): Boolean {
+            when (event.actionMasked) {
+
+                MotionEvent.ACTION_DOWN -> {
+                    val x = event.x
+                    val y = event.y
+                    if (soundButtonRect.contains(x, y)) {
+                        isSoundOn = !isSoundOn
+                        isMusicOn=isSoundOn
+                        if (isMusicOn) {
+                            bgMusic?.start()
+                        } else {
+                            bgMusic?.pause()
+                        }
+                        return true
+                    }
+                    if (musicButtonRect.contains(x, y)) {
+                        isMusicOn = !isMusicOn
+
+                        if (isMusicOn) {
+                            bgMusic?.start()
+                        } else {
+                            bgMusic?.pause()
+                        }
+                        return true
+                    }
+                    lastX = event.x
+                    spawnBullet() // bấm xuống thì bắn đạn
+                }
+
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.x - lastX
+                    if (Math.abs(dx) > 10) { // ngưỡng để nhận là vuốt
+                        characterX += dx   // di chuyển ngang
+                        lastX = event.x
+                    }
+
+                    // Check biên trong ACTION_MOVE
+                    if (characterX - characterSize / 2f < 0) {
+                        characterX = characterSize / 2f
+                        if(isSoundOn)
+                        soundPool.play(soundWall, 1f, 1f, 1, 0, 1f)
+                    } else if (characterX + characterSize / 2f > width) {
+                        characterX = width - characterSize / 2f
+                        if(isSoundOn)
+                        soundPool.play(soundWall, 1f, 1f, 1, 0, 1f)
+                    }
+                }
+            }
+
+            invalidate()
+            return true
+        }
+    */
 
 
     fun resume() {

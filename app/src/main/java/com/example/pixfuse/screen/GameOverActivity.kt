@@ -99,47 +99,38 @@ class GameOverActivity : AppCompatActivity() {
             val width = backgroundView.width
             val height = backgroundView.height
 
-            // Center everything vertically
-            val centerY = height / 2
-
             // Title
-            titleText.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
             val titleParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-                topMargin = centerY - 100
+                gravity = Gravity.CENTER_HORIZONTAL or Gravity.CENTER_VERTICAL
+                topMargin = -200 // dịch lên trên một chút
             }
             titleText.layoutParams = titleParams
 
             // Buttons
             val buttonWidth = width * 2 / 3
             val buttonHeight = 70
-            val buttonParams = FrameLayout.LayoutParams(
-                buttonWidth,
-                buttonHeight
-            ).apply {
+            val buttonParams = FrameLayout.LayoutParams(buttonWidth, buttonHeight).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
             }
 
-            tryAgainButton.layoutParams = buttonParams
-            tryAgainButton.layout(
-                (width - buttonWidth) / 2,
-                centerY + 50,
-                (width + buttonWidth) / 2,
-                centerY + 50 + buttonHeight
-            )
+            tryAgainButton.layoutParams = FrameLayout.LayoutParams(buttonWidth, buttonHeight).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                topMargin = height / 2 + 50
+            }
 
-            menuButton.layoutParams = buttonParams
-            menuButton.layout(
-                (width - buttonWidth) / 2,
-                centerY + 140,
-                (width + buttonWidth) / 2,
-                centerY + 140 + buttonHeight
-            )
+            menuButton.layoutParams = FrameLayout.LayoutParams(buttonWidth, buttonHeight).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                topMargin = height / 2 + 150
+            }
+
+            // nếu có thêm playAgainButton
+
         }
     }
+
 
     private fun setupAnimations() {
         // Scale in animation for all views
