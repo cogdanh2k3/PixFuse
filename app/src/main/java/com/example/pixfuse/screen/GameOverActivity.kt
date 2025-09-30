@@ -7,14 +7,15 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Gravity
-import android.view.View
 import android.view.ViewGroup
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import com.example.pixfuse.R
 
 class GameOverActivity : AppCompatActivity() {
 
@@ -23,9 +24,11 @@ class GameOverActivity : AppCompatActivity() {
     }
 
     private lateinit var backgroundView: FrameLayout
+    private lateinit var loseImage: ImageView
     private lateinit var titleText: TextView
     private lateinit var tryAgainButton: Button
     private lateinit var menuButton: Button
+    private lateinit var shopButton: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,11 +40,10 @@ class GameOverActivity : AppCompatActivity() {
         setupAnimations()
         setupClickListeners()
 
-        // Thiết lập OnBackPressedCallback để chỉ xử lý khi nhấn back
+        // Xử lý khi nhấn back
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                // Không tự động quay về menu, để người dùng quyết định
-                // Hoặc bạn có thể thêm logic quay về menu nếu muốn
+                // Không làm gì cả
             }
         })
     }
@@ -51,6 +53,17 @@ class GameOverActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor("#80000000")) // Semi-transparent overlay
         }
         setContentView(backgroundView)
+
+        // Lose image (chỉ hiển thị khi thua)
+        loseImage = ImageView(this).apply {
+            if (!isWin) {
+                setImageResource(R.drawable.youlose) // ảnh you_lose.png trong res/drawable
+                adjustViewBounds = true
+                scaleType = ImageView.ScaleType.FIT_CENTER
+            } else {
+                visibility = ImageView.GONE
+            }
+        }
 
         // Title
         titleText = TextView(this).apply {
@@ -64,18 +77,21 @@ class GameOverActivity : AppCompatActivity() {
         // Buttons
         tryAgainButton = createStyledButton("TRY AGAIN", Color.parseColor("#4CAF50"))
         menuButton = createStyledButton("MAIN MENU", Color.parseColor("#FF9800"))
+        shopButton = createStyledButton("SHOP", Color.parseColor("#2196F3"))
 
         // Add views
         backgroundView.apply {
+            addView(loseImage)
             addView(titleText)
             addView(tryAgainButton)
             addView(menuButton)
+            addView(shopButton)
         }
 
         layoutViews()
     }
 
-    private fun createStyledButton(text: String, color: Int): Button {
+/*    private fun createStyledButton(text: String, color: Int): Button {
         return Button(this).apply {
             this.text = text
             textSize = 18f
@@ -84,7 +100,7 @@ class GameOverActivity : AppCompatActivity() {
             background = createButtonDrawable(color)
             elevation = 8f
         }
-    }
+    }*/
 
     private fun createButtonDrawable(color: Int): Drawable {
         return GradientDrawable().apply {
@@ -94,47 +110,67 @@ class GameOverActivity : AppCompatActivity() {
         }
     }
 
+    private fun createStyledButton(text: String, color: Int): Button {
+        return Button(this).apply {
+            this.text = text
+            textSize = 24f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+            background = createButtonDrawable(color)
+            elevation = 10f
+            setPadding(40, 0, 40, 0) // tăng khoảng cách bên trong nút
+            isAllCaps = false        // giữ nguyên chữ hoa thường
+        }
+    }
+
     private fun layoutViews() {
         backgroundView.post {
             val width = backgroundView.width
             val height = backgroundView.height
+
+            // Lose image
+            loseImage.layoutParams = FrameLayout.LayoutParams(
+                width / 2,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                topMargin = height / 8   // đặt cao hơn, cách trên khoảng 1/8 màn hình
+            }
 
             // Title
             val titleParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                gravity = Gravity.CENTER_HORIZONTAL or Gravity.CENTER_VERTICAL
-                topMargin = -200 // dịch lên trên một chút
+                gravity = Gravity.CENTER_HORIZONTAL
+                topMargin = height / 3   // đặt title ngay dưới ảnh
             }
             titleText.layoutParams = titleParams
 
             // Buttons
             val buttonWidth = width * 2 / 3
-            val buttonHeight = 70
-            val buttonParams = FrameLayout.LayoutParams(buttonWidth, buttonHeight).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-            }
+            val buttonHeight = 120
 
             tryAgainButton.layoutParams = FrameLayout.LayoutParams(buttonWidth, buttonHeight).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
-                topMargin = height / 2 + 50
+                topMargin = height / 2
             }
 
             menuButton.layoutParams = FrameLayout.LayoutParams(buttonWidth, buttonHeight).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
-                topMargin = height / 2 + 150
+                topMargin = height / 2 + 170
             }
 
-            // nếu có thêm playAgainButton
-
+            shopButton.layoutParams = FrameLayout.LayoutParams(buttonWidth, buttonHeight).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                topMargin = height / 2 + 340
+            }
         }
     }
 
 
     private fun setupAnimations() {
-        // Scale in animation for all views
-        val views = listOf(titleText, tryAgainButton, menuButton)
+        val views = listOf(loseImage, titleText, tryAgainButton, menuButton, shopButton)
         views.forEachIndexed { index, view ->
             view.scaleX = 0f
             view.scaleY = 0f
@@ -161,6 +197,10 @@ class GameOverActivity : AppCompatActivity() {
             intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
             startActivity(intent)
             finish()
+        }
+
+        shopButton.setOnClickListener {
+            // Tạm thời chưa cần chức năng
         }
     }
 }

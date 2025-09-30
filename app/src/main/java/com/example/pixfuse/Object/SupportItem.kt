@@ -22,7 +22,8 @@ class SupportItem(
         LASER,
         BOMB ,               // ✅ loại mới
         HEART,
-        SHIELD
+        SHIELD,
+        COIN   // ➕ coin mới
     }
 
     fun update(deltaTime: Float, screenHeight: Float): Boolean {
@@ -65,6 +66,7 @@ class SupportItem(
                 Type.BOMB -> R.drawable.bomb      // cần icon mới
                 Type.HEART -> R.drawable.full_heart
                 Type.SHIELD -> R.drawable.shield
+                Type.COIN -> R.drawable.coin
             }
             val bitmap = BitmapFactory.decodeResource(context.resources, resId)
 

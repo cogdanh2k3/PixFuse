@@ -19,6 +19,7 @@ import kotlin.math.min
 import kotlin.random.Random
 import com.example.pixfuse.Object.Asteroid
 import com.example.pixfuse.Object.Bomb
+import com.example.pixfuse.Object.EnemyBullet
 import com.example.pixfuse.Object.Laser
 import com.example.pixfuse.Object.SupportManager
 
@@ -132,10 +133,14 @@ class GameView @JvmOverloads constructor(
 
     private lateinit var heartFull: Bitmap
     private lateinit var heartEmpty: Bitmap
+    private lateinit var coinBitmap: Bitmap
     private val supportManager = SupportManager()
+    private val enemyBullets = mutableListOf<EnemyBullet>()
+
     private fun loadHearts() {
         heartFull = BitmapFactory.decodeResource(context.resources, R.drawable.full_heart)
         heartEmpty = BitmapFactory.decodeResource(context.resources, R.drawable.empty_heart)
+        coinBitmap = BitmapFactory.decodeResource(resources, R.drawable.coin)
     }
     init {
         // Khởi tạo SoundPool
@@ -227,9 +232,22 @@ private fun updateSupportItems(deltaTime: Float) {
 
         val bmp = asteroidBitmaps?.random()  // chọn ngẫu nhiên sprite
 
-        asteroids.add(Asteroid(x, y, asteroidSize, speed, bitmap = bmp))
-    }
+        // Xác suất 30% trở thành quái bắn
+        val canShoot = (Random.nextFloat() < 0.3f)
 
+        asteroids.add(
+            Asteroid(
+                x = x,
+                y = y,
+                size = asteroidSize,
+                speed = speed,
+                hitCount = 0,
+                canShoot = canShoot,
+                lastShotTime = 0L,
+                bitmap = bmp
+            )
+        )
+    }
 private fun spawnBullet() {
     when (bulletLevel) {
         1 -> {
@@ -290,6 +308,24 @@ private fun spawnBullet() {
                     updateSupportItems(deltaTime)
                     updateLasers()
                     updateBombs(deltaTime)
+
+                    for (asteroid in asteroids) {
+                        if (asteroid.canShoot && currentTime - asteroid.lastShotTime > 1000) {
+                            // Spawn đạn rơi xuống từ tâm asteroid
+                            enemyBullets.add(EnemyBullet(asteroid.x, asteroid.y + asteroid.size / 2f))
+                            asteroid.lastShotTime = currentTime
+                        }
+                    }
+                    val bulletIterator = enemyBullets.iterator()
+                    while (bulletIterator.hasNext()) {
+                        val bullet = bulletIterator.next()
+                        bullet.y += bullet.speed
+
+                        // Nếu ra khỏi màn hình thì xóa
+                        if (bullet.y > height) {
+                            bulletIterator.remove()
+                        }
+                    }
                     supportManager.update()
                     if (bombMode && System.currentTimeMillis() > bombModeEndTime) {
                         bombMode = false
@@ -409,28 +445,49 @@ private fun updateAsteroids(deltaTime: Float) {
 
     private fun drawHearts(canvas: Canvas) {
         val heartSize = 80   // kích thước tim (pixel)
-        val margin = 20      // khoảng cách
+        val margin = 20      // khoảng cách giữa các tim
 
+        // Vẽ tim (full / empty)
         for (i in 0 until supportManager.maxHP) {
             val x = margin + i * (heartSize + margin)
             val y = margin
 
-            if (i < supportManager.currentHP) {
-                canvas.drawBitmap(
-                    Bitmap.createScaledBitmap(heartFull, heartSize, heartSize, true),
-                    x.toFloat(),
-                    y.toFloat(),
-                    null
-                )
-            } else {
-                canvas.drawBitmap(
-                    Bitmap.createScaledBitmap(heartEmpty, heartSize, heartSize, true),
-                    x.toFloat(),
-                    y.toFloat(),
-                    null
-                )
-            }
+            val heartToDraw = if (i < supportManager.currentHP) heartFull else heartEmpty
+            val scaledHeart = Bitmap.createScaledBitmap(heartToDraw, heartSize, heartSize, true)
+
+            canvas.drawBitmap(scaledHeart, x.toFloat(), y.toFloat(), null)
         }
+
+        // Coin
+        val coinSize = 64
+        val coinX = margin.toFloat()
+        val coinY = (heartSize + margin * 2).toFloat()   // dưới tim
+
+        val scaledCoin = Bitmap.createScaledBitmap(coinBitmap, coinSize, coinSize, true)
+        canvas.drawBitmap(scaledCoin, coinX, coinY, null)
+
+        val textPaint = Paint().apply {
+            color = Color.YELLOW
+            textSize = 48f
+            typeface = Typeface.DEFAULT_BOLD
+            isAntiAlias = true
+        }
+        canvas.drawText(
+            "x ${supportManager.coinCount}",
+            coinX + coinSize + 10f,
+            coinY + coinSize * 0.75f,
+            textPaint
+        )
+
+        // Kill count (dưới coin)
+        val killTextPaint = Paint().apply {
+            color = Color.WHITE
+            textSize = 42f
+            typeface = Typeface.DEFAULT_BOLD
+            isAntiAlias = true
+        }
+        val killY = coinY + coinSize + 50f
+        canvas.drawText("Kills: ${supportManager.killCount}", coinX, killY, killTextPaint)
     }
 
     private fun checkCollisions() {
@@ -463,6 +520,11 @@ private fun updateAsteroids(deltaTime: Float) {
                     asteroid.hitCount = 0
                 }
             }
+// Quái rơi chạm đáy màn hình => thua luôn
+            if (asteroid.y + asteroid.size / 2f >= height) {
+                endGame()
+                return
+            }
         }
 
         // ======================
@@ -485,6 +547,7 @@ private fun updateAsteroids(deltaTime: Float) {
                     }
                     SupportItem.Type.SHIELD -> supportManager.activateShield(3)
                     SupportItem.Type.HEART -> supportManager.heal(1)
+                    SupportItem.Type.COIN -> supportManager.addCoin(1)   // ➕ coin
                 }
             }
         }
@@ -540,6 +603,7 @@ private fun updateAsteroids(deltaTime: Float) {
                     asteroid.hitCount++
 
                     if (asteroid.hitCount >= 3) {
+                        supportManager.killCount++
                         asteroid.x = Random.nextFloat() * width
                         asteroid.y = -asteroid.size / 2f
                         asteroid.hitCount = 0
@@ -552,17 +616,23 @@ private fun updateAsteroids(deltaTime: Float) {
                 }
             }
         }
-    }
-
-    private fun shootBomb() {
-        bombs.add(
-            Bomb(
-                x = characterX,
-                y = characterY - characterSize / 2f
+        val enemyBulletIterator = enemyBullets.iterator()
+        while (enemyBulletIterator.hasNext()) {
+            val bullet = enemyBulletIterator.next()
+            val bulletRect = RectF(
+                bullet.x - bullet.size / 2f,
+                bullet.y - bullet.size / 2f,
+                bullet.x + bullet.size / 2f,
+                bullet.y + bullet.size / 2f
             )
-        )
-        if (isSoundOn) {
-            soundPool.play(soundShoot, 1f, 1f, 1, 0, 1f)
+            if (RectF.intersects(characterRect, bulletRect)) {
+                enemyBulletIterator.remove()
+                val isDead = supportManager.takeDamage()
+                if (isDead) {
+                    endGame()
+                    return
+                }
+            }
         }
     }
     private fun drawBombs(canvas: Canvas) {
@@ -701,6 +771,13 @@ private fun updateAsteroids(deltaTime: Float) {
                 isAntiAlias = true
             }
             canvas.drawCircle(characterX, characterY, characterSize.toFloat(), blinkPaint)
+        }
+        val paintEnemyBullet = Paint().apply {
+            color = Color.RED
+            isAntiAlias = true
+        }
+        enemyBullets.forEach { bullet ->
+            canvas.drawCircle(bullet.x, bullet.y, bullet.size / 2f, paintEnemyBullet)
         }
     }
     private fun drawLasers(canvas: Canvas) {

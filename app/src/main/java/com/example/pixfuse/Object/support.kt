@@ -60,4 +60,10 @@ class SupportManager {
     fun isShieldActive(): Boolean {
         return shieldCount > 0
     }
+    var coinCount = 0
+
+    fun addCoin(amount: Int = 1) {
+        coinCount += amount
+    }
+    var killCount = 0   // số kẻ địch bị hạ
 }
