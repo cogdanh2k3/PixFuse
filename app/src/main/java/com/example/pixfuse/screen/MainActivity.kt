@@ -602,7 +602,7 @@ private fun updateAsteroids(deltaTime: Float) {
                     bulletIterator.remove()
                     asteroid.hitCount++
 
-                    if (asteroid.hitCount >= 3) {
+                    if (asteroid.hitCount >= 1) {
                         supportManager.killCount++
                         asteroid.x = Random.nextFloat() * width
                         asteroid.y = -asteroid.size / 2f
